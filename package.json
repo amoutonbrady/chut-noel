@@ -1,0 +1,27 @@
+{
+  "name": "chut-noel",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^11.1.11",
+    "@netlify/functions": "^6.1.2",
+    "@oddbird/popover-polyfill": "^0.6.1",
+    "@solidjs/web": "^2.0.4",
+    "solid-js": "^2.0.4"
+  },
+  "devDependencies": {
+    "@netlify/vite-plugin": "^3.0.1",
+    "@solidjs/vite-plugin": "^3.0.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8",
+    "vitest": "^3.2.4"
+  }
+}
