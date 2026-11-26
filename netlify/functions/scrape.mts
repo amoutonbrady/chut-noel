@@ -1,9 +1,11 @@
 import type { Config, Context } from "@netlify/functions";
+import type { ScrapedMetadata } from "../../src/shared/types";
 import { scrapeProductUrl } from "./_lib/scraper.mjs";
 import {
   errorResponse,
   jsonResponse,
   parseJsonBody,
+  requireOwnerAuth,
 } from "./_lib/storage.mjs";
 
 export const config: Config = {
@@ -14,6 +16,11 @@ export const config: Config = {
 export default async (req: Request, _context: Context): Promise<Response> => {
   if (req.method !== "POST") {
     return errorResponse("Méthode non autorisée.", 405);
+  }
+
+  const authError = requireOwnerAuth(req);
+  if (authError) {
+    return authError;
   }
 
   const parsed = await parseJsonBody(req);
@@ -31,5 +38,13 @@ export default async (req: Request, _context: Context): Promise<Response> => {
     return errorResponse(result.error, 400);
   }
 
-  return jsonResponse(result.data, 200);
+  const metadata: ScrapedMetadata = {
+    url: result.data.url,
+    ...(result.data.title ? { title: result.data.title } : {}),
+    ...(result.data.imageUrl ? { imageUrl: result.data.imageUrl } : {}),
+    ...(result.data.priceHint ? { priceHint: result.data.priceHint } : {}),
+    ...(result.data.siteName ? { siteName: result.data.siteName } : {}),
+  };
+
+  return jsonResponse(metadata, 200);
 };

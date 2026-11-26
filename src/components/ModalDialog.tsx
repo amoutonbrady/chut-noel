@@ -1,59 +1,57 @@
 import { createEffect, createUniqueId, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
-import {
-  closeTopLayer,
-  isClosedBySupported,
-  isPointOutsideDialog,
-} from "../lib/topLayer";
+import { CloseIcon } from "./Icons";
 
 export interface ModalDialogProps {
   open: boolean;
   title: string;
   subtitle?: string;
-  size?: "sm" | "md" | "lg";
-  closeLabel?: string;
+  size?: "sm" | "md";
   onClose: () => void;
   children?: JSX.Element;
 }
 
+const supportsClosedBy = (): boolean =>
+  typeof HTMLDialogElement !== "undefined" &&
+  "closedBy" in HTMLDialogElement.prototype;
+
+const isOutsideDialog = (
+  dialog: HTMLDialogElement,
+  x: number,
+  y: number,
+): boolean => {
+  const r = dialog.getBoundingClientRect();
+  return x < r.left || x > r.right || y < r.top || y > r.bottom;
+};
+
 export function ModalDialog(props: ModalDialogProps) {
   const titleId = createUniqueId();
   let dialogRef: HTMLDialogElement | undefined;
-  let pointerDownOutside = false;
+  let downOutside = false;
 
   createEffect(
     () => props.open,
     (isOpen) => {
       const el = dialogRef;
-      if (!el || !el.isConnected) {
-        return;
-      }
+      if (!el || !el.isConnected) return;
       if (isOpen) {
-        if (!el.open) {
-          el.showModal();
-        }
+        if (!el.open) el.showModal();
       } else if (el.open) {
-        closeTopLayer(el);
+        el.close();
       }
     },
   );
 
   onSettled(() => {
     const el = dialogRef;
-    if (el && props.open && !el.open) {
-      el.showModal();
-    }
+    if (el && props.open && !el.open) el.showModal();
     return () => {
-      if (dialogRef?.open) {
-        dialogRef.close();
-      }
+      if (dialogRef?.open) dialogRef.close();
     };
   });
 
-  const handleCloseRequest = () => {
-    if (dialogRef) {
-      closeTopLayer(dialogRef);
-    }
+  const closeDialog = () => {
+    if (dialogRef?.open) dialogRef.close();
   };
 
   return (
@@ -61,65 +59,54 @@ export function ModalDialog(props: ModalDialogProps) {
       ref={(el) => {
         dialogRef = el;
       }}
-      class="modal-dialog"
-      style={props.size === "sm" ? { width: "min(440px, calc(100vw - 1.5rem))" } : undefined}
+      class={["modal-dialog", { "modal-dialog--sm": props.size === "sm" }]}
       aria-labelledby={titleId}
       {...({ closedby: "any" } as Record<string, unknown>)}
-      onCancel={(e) => {
-        e.preventDefault();
-        handleCloseRequest();
-      }}
       onClose={() => {
-        pointerDownOutside = false;
-        if (dialogRef) {
-          dialogRef.returnValue = "";
-        }
+        downOutside = false;
+        if (dialogRef) dialogRef.returnValue = "";
         props.onClose();
       }}
       onPointerDown={(e) => {
-        if (!isClosedBySupported() && dialogRef && e.button === 0) {
-          pointerDownOutside = isPointOutsideDialog(
-            dialogRef,
-            e.clientX,
-            e.clientY,
-          );
-        } else {
-          pointerDownOutside = false;
-        }
+        // Safari fallback for closedby="any" light-dismiss
+        downOutside =
+          !supportsClosedBy() &&
+          e.button === 0 &&
+          Boolean(dialogRef && isOutsideDialog(dialogRef, e.clientX, e.clientY));
       }}
       onPointerUp={(e) => {
         if (
-          !isClosedBySupported() &&
-          pointerDownOutside &&
+          !supportsClosedBy() &&
+          downOutside &&
           dialogRef &&
-          isPointOutsideDialog(dialogRef, e.clientX, e.clientY)
+          isOutsideDialog(dialogRef, e.clientX, e.clientY)
         ) {
-          pointerDownOutside = false;
-          handleCloseRequest();
+          downOutside = false;
+          closeDialog();
           return;
         }
-        pointerDownOutside = false;
+        downOutside = false;
       }}
       onPointerCancel={() => {
-        pointerDownOutside = false;
+        downOutside = false;
       }}
     >
       <header class="modal-header">
-        <div>
-          <h1 id={titleId} class="modal-title">
+        <div class="modal-heading">
+          <h2 id={titleId} class="modal-title">
             {props.title}
-          </h1>
+          </h2>
           <Show when={props.subtitle}>
-            {(sub) => <p class="text-muted">{sub()}</p>}
+            {(sub) => <p class="modal-subtitle">{sub()}</p>}
           </Show>
         </div>
         <button
           type="button"
-          class="modal-close"
-          aria-label={props.closeLabel ?? "Fermer la fenêtre"}
-          onClick={handleCloseRequest}
+          class="icon-btn"
+          aria-label="Fermer"
+          onClick={closeDialog}
         >
-          <span aria-hidden="true">✕</span>
+          <CloseIcon size={16} />
         </button>
       </header>
       <div class="modal-body">{props.children}</div>

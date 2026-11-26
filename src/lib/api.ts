@@ -1,20 +1,25 @@
 import type {
-  CreateClaimPayload,
+  AdminItemsResponse,
+  ClaimMode,
+  CreateClaimInput,
   CreateClaimResponse,
-  CreateItemPayload,
-  CreateListPayload,
-  CreateListResponse,
-  GuestWishlistView,
-  OwnedListRecord,
-  OwnerWishlistView,
-  SavedGuestClaimToken,
-  ScrapeLinkResponse,
-  UpdateItemPayload,
-  UpdateListPayload,
+  CreateItemInput,
+  ScrapedMetadata,
+  UpdateItemInput,
+  WishItem,
+  WishlistPublicResponse,
 } from "../shared/types";
 
-const OWNED_LISTS_KEY = "chut-noel:owned-lists";
-const GUEST_CLAIMS_KEY = "chut-noel:guest-claims";
+const OWNER_TOKEN_KEY = "wish:owner-token";
+const GUEST_CLAIMS_KEY = "wish:guest-claims";
+
+export interface SavedClaimToken {
+  claimId: string;
+  itemId: string;
+  cancelToken: string;
+  mode: ClaimMode;
+  guestName?: string;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -63,131 +68,101 @@ async function requestJson<T>(url: string, init: RequestInit = {}): Promise<T> {
   return payload as T;
 }
 
-export function createList(
-  payload: CreateListPayload,
-): Promise<CreateListResponse> {
-  return requestJson<CreateListResponse>("/api/lists", {
-    method: "POST",
-    body: JSON.stringify(payload),
+function authHeaders(token: string): HeadersInit {
+  return { Authorization: `Bearer ${token}` };
+}
+
+// --- Public Wishlist API ---
+
+export function fetchWishlist(): Promise<WishlistPublicResponse> {
+  return requestJson<WishlistPublicResponse>("/api/wishlist", {
+    method: "GET",
   });
 }
 
-export function fetchOwnerList(ownerToken: string): Promise<OwnerWishlistView> {
-  return requestJson<OwnerWishlistView>(
-    `/api/owner/${encodeURIComponent(ownerToken)}`,
-    { method: "GET" },
-  );
-}
-
-export function updateOwnerList(
-  ownerToken: string,
-  payload: UpdateListPayload,
-): Promise<OwnerWishlistView> {
-  return requestJson<OwnerWishlistView>(
-    `/api/owner/${encodeURIComponent(ownerToken)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    },
-  );
-}
-
-export function addOwnerItem(
-  ownerToken: string,
-  payload: CreateItemPayload,
-): Promise<OwnerWishlistView> {
-  return requestJson<OwnerWishlistView>(
-    `/api/owner/${encodeURIComponent(ownerToken)}/items`,
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-  );
-}
-
-export function updateOwnerItem(
-  ownerToken: string,
-  itemId: string,
-  payload: UpdateItemPayload,
-): Promise<OwnerWishlistView> {
-  return requestJson<OwnerWishlistView>(
-    `/api/owner/${encodeURIComponent(ownerToken)}/items/${encodeURIComponent(itemId)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    },
-  );
-}
-
-export function deleteOwnerItem(
-  ownerToken: string,
-  itemId: string,
-): Promise<OwnerWishlistView> {
-  return requestJson<OwnerWishlistView>(
-    `/api/owner/${encodeURIComponent(ownerToken)}/items/${encodeURIComponent(itemId)}`,
-    {
-      method: "DELETE",
-    },
-  );
-}
-
-export function fetchGuestList(slug: string): Promise<GuestWishlistView> {
-  return requestJson<GuestWishlistView>(
-    `/api/lists/${encodeURIComponent(slug)}`,
-    { method: "GET" },
-  );
-}
-
-export function createGuestClaim(
-  slug: string,
-  payload: CreateClaimPayload,
+export function createClaim(
+  input: CreateClaimInput,
 ): Promise<CreateClaimResponse> {
-  return requestJson<CreateClaimResponse>(
-    `/api/lists/${encodeURIComponent(slug)}/claims`,
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-  );
+  return requestJson<CreateClaimResponse>("/api/claims", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
-export function deleteGuestClaim(
-  slug: string,
+export function deleteClaim(
   claimId: string,
   options?: { cancelToken?: string; force?: boolean },
 ): Promise<{ ok: true }> {
-  const headers: Record<string, string> = {};
-  if (options?.cancelToken) {
-    headers["x-cancel-token"] = options.cancelToken;
-  }
-
-  const bodyPayload: { cancelToken?: string; force?: boolean } = {};
-  if (options?.cancelToken) {
-    bodyPayload.cancelToken = options.cancelToken;
-  }
-  if (options?.force) {
-    bodyPayload.force = true;
-  }
+  const body: { cancelToken?: string; force?: boolean } = {};
+  if (options?.cancelToken) body.cancelToken = options.cancelToken;
+  if (options?.force) body.force = true;
 
   return requestJson<{ ok: true }>(
-    `/api/lists/${encodeURIComponent(slug)}/claims/${encodeURIComponent(claimId)}`,
+    `/api/claims/${encodeURIComponent(claimId)}`,
     {
       method: "DELETE",
-      headers,
-      body:
-        Object.keys(bodyPayload).length > 0
-          ? JSON.stringify(bodyPayload)
-          : undefined,
+      body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
     },
   );
 }
 
-export function scrapeLink(url: string): Promise<ScrapeLinkResponse> {
-  return requestJson<ScrapeLinkResponse>("/api/scrape", {
+// --- Owner Admin API (never touches claims) ---
+
+export function fetchAdminItems(token: string): Promise<AdminItemsResponse> {
+  return requestJson<AdminItemsResponse>("/api/admin/items", {
+    method: "GET",
+    headers: authHeaders(token),
+  });
+}
+
+export function createAdminItem(
+  token: string,
+  input: CreateItemInput,
+): Promise<{ item: WishItem }> {
+  return requestJson<{ item: WishItem }>("/api/admin/items", {
     method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateAdminItem(
+  token: string,
+  id: string,
+  input: UpdateItemInput,
+): Promise<{ item: WishItem }> {
+  return requestJson<{ item: WishItem }>(
+    `/api/admin/items/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: authHeaders(token),
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function deleteAdminItem(
+  token: string,
+  id: string,
+): Promise<{ ok: true }> {
+  return requestJson<{ ok: true }>(
+    `/api/admin/items/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+      headers: authHeaders(token),
+    },
+  );
+}
+
+export function scrapeUrl(token: string, url: string): Promise<ScrapedMetadata> {
+  return requestJson<ScrapedMetadata>("/api/scrape", {
+    method: "POST",
+    headers: authHeaders(token),
     body: JSON.stringify({ url }),
   });
 }
+
+// --- Safe localStorage helpers ---
 
 function getStorage(): Storage | null {
   try {
@@ -200,120 +175,129 @@ function getStorage(): Storage | null {
   }
 }
 
-export function getOwnedLists(): OwnedListRecord[] {
+export function getOwnerToken(): string | null {
   const storage = getStorage();
-  if (!storage) {
-    return [];
-  }
+  if (!storage) return null;
   try {
-    const raw = storage.getItem(OWNED_LISTS_KEY);
-    if (!raw) {
-      return [];
-    }
+    const val = storage.getItem(OWNER_TOKEN_KEY);
+    return val && val.trim() ? val.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setOwnerToken(token: string): void {
+  const storage = getStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(OWNER_TOKEN_KEY, token.trim());
+  } catch {
+    // Ignore private browsing / quota errors
+  }
+}
+
+export function clearOwnerToken(): void {
+  const storage = getStorage();
+  if (!storage) return;
+  try {
+    storage.removeItem(OWNER_TOKEN_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function getSavedClaimTokens(): SavedClaimToken[] {
+  const storage = getStorage();
+  if (!storage) return [];
+  try {
+    const raw = storage.getItem(GUEST_CLAIMS_KEY);
+    if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return (parsed as OwnedListRecord[]).filter(
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as SavedClaimToken[]).filter(
       (entry) =>
         Boolean(entry) &&
         typeof entry === "object" &&
-        typeof entry.slug === "string" &&
-        typeof entry.ownerToken === "string",
+        typeof entry.claimId === "string" &&
+        typeof entry.itemId === "string" &&
+        typeof entry.cancelToken === "string",
     );
   } catch {
     return [];
   }
 }
 
-export function saveOwnedList(record: OwnedListRecord): void {
+export function saveClaimToken(entry: SavedClaimToken): void {
   const storage = getStorage();
-  if (!storage) {
-    return;
-  }
-  const existing = getOwnedLists().filter((entry) => entry.slug !== record.slug);
-  const next = [record, ...existing];
+  if (!storage) return;
+  const next = [
+    ...getSavedClaimTokens().filter((c) => c.claimId !== entry.claimId),
+    entry,
+  ];
   try {
-    storage.setItem(OWNED_LISTS_KEY, JSON.stringify(next));
+    storage.setItem(GUEST_CLAIMS_KEY, JSON.stringify(next));
   } catch {
-    // Ignore quota / private browsing storage failures.
+    // Ignore storage errors
   }
 }
 
-export function findOwnedListBySlug(
-  slug: string,
-): OwnedListRecord | undefined {
-  return getOwnedLists().find((entry) => entry.slug === slug);
-}
-
-function readAllGuestClaims(): Record<string, SavedGuestClaimToken[]> {
+export function removeClaimToken(claimId: string): void {
   const storage = getStorage();
-  if (!storage) {
-    return {};
-  }
+  if (!storage) return;
+  const next = getSavedClaimTokens().filter((c) => c.claimId !== claimId);
   try {
-    const raw = storage.getItem(GUEST_CLAIMS_KEY);
-    if (!raw) {
-      return {};
+    if (next.length === 0) {
+      storage.removeItem(GUEST_CLAIMS_KEY);
+    } else {
+      storage.setItem(GUEST_CLAIMS_KEY, JSON.stringify(next));
     }
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return {};
-    }
-    return parsed as Record<string, SavedGuestClaimToken[]>;
   } catch {
-    return {};
+    // Ignore storage errors
   }
 }
 
-function writeAllGuestClaims(
-  all: Record<string, SavedGuestClaimToken[]>,
-): void {
-  const storage = getStorage();
-  if (!storage) {
-    return;
+// --- Small URL & clipboard helpers ---
+
+export function extractDomain(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const host = new URL(raw).hostname.replace(/^www\./i, "");
+    return host || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function isHttpUrl(raw: string): boolean {
+  try {
+    const parsed = new URL(raw.trim());
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fallback below
   }
   try {
-    storage.setItem(GUEST_CLAIMS_KEY, JSON.stringify(all));
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(area);
+    return ok;
   } catch {
-    // Ignore quota / private browsing storage failures.
+    return false;
   }
-}
-
-export function getGuestClaimTokens(slug: string): SavedGuestClaimToken[] {
-  const all = readAllGuestClaims();
-  const entries = all[slug];
-  if (!Array.isArray(entries)) {
-    return [];
-  }
-  return entries.filter(
-    (entry) =>
-      Boolean(entry) &&
-      typeof entry === "object" &&
-      typeof entry.claimId === "string" &&
-      typeof entry.cancelToken === "string",
-  );
-}
-
-export function saveGuestClaimToken(
-  slug: string,
-  token: SavedGuestClaimToken,
-): void {
-  const all = readAllGuestClaims();
-  const current = Array.isArray(all[slug]) ? all[slug] : [];
-  const filtered = current.filter((entry) => entry.claimId !== token.claimId);
-  all[slug] = [...filtered, token];
-  writeAllGuestClaims(all);
-}
-
-export function removeGuestClaimToken(slug: string, claimId: string): void {
-  const all = readAllGuestClaims();
-  const current = Array.isArray(all[slug]) ? all[slug] : [];
-  const next = current.filter((entry) => entry.claimId !== claimId);
-  if (next.length === 0) {
-    delete all[slug];
-  } else {
-    all[slug] = next;
-  }
-  writeAllGuestClaims(all);
 }

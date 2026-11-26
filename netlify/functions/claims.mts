@@ -1,16 +1,11 @@
 import type { Config, Context } from "@netlify/functions";
-import type {
-  CreateClaimResponse,
-  StoredGuestClaim,
-} from "../../src/shared/types";
+import type { CreateClaimResponse } from "../../src/shared/types";
 import {
   errorResponse,
   generateId,
   generateSecretToken,
-  getClaimsStore,
-  getListsStore,
   getStoredClaimsMap,
-  getStoredWishlistBySlug,
+  getStoredItems,
   hashToken,
   isValidClaimMode,
   jsonResponse,
@@ -19,77 +14,48 @@ import {
   safeDecodeParam,
   sanitizeText,
   saveStoredClaimsMap,
-  timingSafeEqual,
+  timingSafeEqualStrings,
   toPublicClaim,
+  type StoredClaim,
 } from "./_lib/storage.mjs";
 
 export const config: Config = {
-  path: [
-    "/api/lists/:slug/claims",
-    "/api/lists/:slug/claims/:claimId",
-  ],
+  path: ["/api/claims", "/api/claims/:claimId"],
 };
 
-interface ParsedClaimsRoute {
-  slug?: string;
-  claimId?: string;
-}
-
-function parseClaimsRoute(req: Request, context?: Context): ParsedClaimsRoute {
+function extractClaimId(req: Request, context?: Context): string | undefined {
+  if (context?.params?.claimId) {
+    return safeDecodeParam(context.params.claimId);
+  }
   const pathname = new URL(req.url).pathname.replace(/\/+$/, "");
-
-  const claimMatch = pathname.match(/^\/api\/lists\/([^/]+)\/claims\/([^/]+)$/);
-  if (claimMatch) {
-    return {
-      slug: safeDecodeParam(context?.params?.slug ?? claimMatch[1]),
-      claimId: safeDecodeParam(context?.params?.claimId ?? claimMatch[2]),
-    };
-  }
-
-  const collectionMatch = pathname.match(/^\/api\/lists\/([^/]+)\/claims$/);
-  if (collectionMatch) {
-    return {
-      slug: safeDecodeParam(context?.params?.slug ?? collectionMatch[1]),
-    };
-  }
-
-  return {
-    slug: safeDecodeParam(context?.params?.slug),
-    claimId: safeDecodeParam(context?.params?.claimId),
-  };
+  const match = pathname.match(/^\/api\/claims\/([^/]+)$/);
+  return safeDecodeParam(match?.[1]);
 }
 
 export default async (req: Request, context: Context): Promise<Response> => {
-  const route = parseClaimsRoute(req, context);
-  if (!route.slug) {
-    return errorResponse("Identifiant de liste manquant.", 404);
-  }
+  const claimId = extractClaimId(req, context);
 
-  // DELETE /api/lists/:slug/claims/:claimId
-  if (route.claimId) {
+  // DELETE /api/claims/:claimId
+  if (claimId) {
     if (req.method !== "DELETE") {
       return errorResponse("Méthode non autorisée.", 405);
     }
 
     const headerToken = req.headers.get("x-cancel-token")?.trim();
-    const optionalBody = await parseOptionalJsonBody(req);
+    const body = await parseOptionalJsonBody(req);
     const bodyToken =
-      typeof optionalBody?.cancelToken === "string"
-        ? optionalBody.cancelToken.trim()
-        : undefined;
+      typeof body?.cancelToken === "string" ? body.cancelToken.trim() : undefined;
     const cancelToken = headerToken || bodyToken;
-    const force = optionalBody?.force === true;
+    const force = body?.force === true;
 
-    const claimsStore = getClaimsStore();
-    const claimsMap = await getStoredClaimsMap(route.slug, claimsStore);
-
+    const claimsMap = await getStoredClaimsMap();
     let foundItemId: string | null = null;
     let foundIndex = -1;
-    let targetClaim: StoredGuestClaim | null = null;
+    let targetClaim: StoredClaim | null = null;
 
     for (const [itemId, claims] of Object.entries(claimsMap)) {
       if (!Array.isArray(claims)) continue;
-      const idx = claims.findIndex((c) => c.id === route.claimId);
+      const idx = claims.findIndex((c) => c.id === claimId);
       if (idx !== -1) {
         foundItemId = itemId;
         foundIndex = idx;
@@ -102,32 +68,30 @@ export default async (req: Request, context: Context): Promise<Response> => {
       return errorResponse("Réservation introuvable.", 404);
     }
 
-    let authorized = force;
-    if (!authorized && cancelToken) {
-      const providedHash = await hashToken(cancelToken);
-      authorized = timingSafeEqual(targetClaim.cancelCodeHash, providedHash);
-    }
+    const authorized =
+      force ||
+      Boolean(
+        cancelToken &&
+          timingSafeEqualStrings(targetClaim.cancelTokenHash, hashToken(cancelToken)),
+      );
 
     if (!authorized) {
-      return errorResponse(
-        "Jeton d'annulation invalide ou manquant pour libérer ce cadeau.",
-        403,
-      );
+      return errorResponse("Jeton d'annulation invalide ou manquant.", 403);
     }
 
-    const updatedList = [...claimsMap[foundItemId]];
-    updatedList.splice(foundIndex, 1);
-    if (updatedList.length === 0) {
+    const updated = [...claimsMap[foundItemId]];
+    updated.splice(foundIndex, 1);
+    if (updated.length === 0) {
       delete claimsMap[foundItemId];
     } else {
-      claimsMap[foundItemId] = updatedList;
+      claimsMap[foundItemId] = updated;
     }
 
-    await saveStoredClaimsMap(route.slug, claimsMap, claimsStore);
+    await saveStoredClaimsMap(claimsMap);
     return jsonResponse({ ok: true }, 200);
   }
 
-  // POST /api/lists/:slug/claims
+  // POST /api/claims
   if (req.method !== "POST") {
     return errorResponse("Méthode non autorisée.", 405);
   }
@@ -140,7 +104,7 @@ export default async (req: Request, context: Context): Promise<Response> => {
   const body = parsed.data;
   const itemId = sanitizeText(body.itemId, 128);
   if (!itemId) {
-    return errorResponse("L'identifiant du cadeau est requis.", 400);
+    return errorResponse("L'identifiant de l'envie est requis.", 400);
   }
 
   if (!isValidClaimMode(body.mode)) {
@@ -150,62 +114,46 @@ export default async (req: Request, context: Context): Promise<Response> => {
     );
   }
 
-  const listsStore = getListsStore();
-  const wishlist = await getStoredWishlistBySlug(route.slug, listsStore);
-  if (!wishlist) {
-    return errorResponse("Liste introuvable.", 404);
+  const items = await getStoredItems();
+  if (!items.some((item) => item.id === itemId)) {
+    return errorResponse("Envie introuvable.", 404);
   }
 
-  const itemExists = wishlist.items.some((item) => item.id === itemId);
-  if (!itemExists) {
-    return errorResponse("Cadeau introuvable dans cette liste.", 404);
-  }
+  const claimsMap = await getStoredClaimsMap();
+  const existing = Array.isArray(claimsMap[itemId]) ? claimsMap[itemId] : [];
+  const hasSolo = existing.some((claim) => claim.mode === "solo");
+  const hasGroup = existing.some((claim) => claim.mode === "group");
 
-  const claimsStore = getClaimsStore();
-  const claimsMap = await getStoredClaimsMap(route.slug, claimsStore);
-  const existingClaims = Array.isArray(claimsMap[itemId])
-    ? claimsMap[itemId]
-    : [];
-
-  const hasSolo = existingClaims.some((claim) => claim.mode === "solo");
-  const hasGroup = existingClaims.some((claim) => claim.mode === "group");
-
-  if (body.mode === "solo" && hasSolo) {
-    return errorResponse("Déjà réservé par un autre lutin !", 409);
+  if (hasSolo) {
+    return errorResponse("Cette envie est déjà réservée.", 409);
   }
   if (body.mode === "solo" && hasGroup) {
     return errorResponse(
-      "Un cadeau groupé est déjà en cours pour ce souhait !",
+      "Un cadeau groupé est déjà en cours pour cette envie.",
       409,
     );
   }
-  if (body.mode === "group" && hasSolo) {
-    return errorResponse("Déjà réservé par un autre lutin !", 409);
-  }
 
-  const guestName = sanitizeText(body.guestName, 60) ?? "Un lutin mystère";
+  const guestName = sanitizeText(body.guestName, 60);
   const message = sanitizeText(body.message, 240, { allowNewlines: true });
   const cancelToken = generateSecretToken(24);
-  const cancelCodeHash = await hashToken(cancelToken);
-  const now = new Date().toISOString();
-
-  const storedClaim: StoredGuestClaim = {
+  const storedClaim: StoredClaim = {
     id: generateId(),
     itemId,
     mode: body.mode,
-    guestName,
+    ...(guestName !== undefined ? { guestName } : {}),
     ...(message !== undefined ? { message } : {}),
-    cancelCodeHash,
-    createdAt: now,
+    cancelTokenHash: hashToken(cancelToken),
+    createdAt: new Date().toISOString(),
   };
 
-  claimsMap[itemId] = [...existingClaims, storedClaim];
-  await saveStoredClaimsMap(route.slug, claimsMap, claimsStore);
+  claimsMap[itemId] = [...existing, storedClaim];
+  await saveStoredClaimsMap(claimsMap);
 
-  const responseBody: CreateClaimResponse = {
+  const response: CreateClaimResponse = {
     claim: toPublicClaim(storedClaim),
     cancelToken,
   };
 
-  return jsonResponse(responseBody, 201);
+  return jsonResponse(response, 201);
 };

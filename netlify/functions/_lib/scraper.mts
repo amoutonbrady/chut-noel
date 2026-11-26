@@ -1,4 +1,4 @@
-import type { ScrapeLinkResponse } from "../../../src/shared/types";
+import type { ScrapedMetadata } from "../../../src/shared/types";
 
 const MAX_RESPONSE_BYTES = 350 * 1024;
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -101,9 +101,15 @@ const IGNORED_SLUG_SEGMENTS = new Set([
   "html",
 ]);
 
+export interface ScrapeOutcome extends ScrapedMetadata {
+  ok: boolean;
+  fallback: boolean;
+  reason?: string;
+}
+
 export type ScrapeResult =
   | { blocked: true; error: string; reason: string }
-  | { blocked: false; data: ScrapeLinkResponse };
+  | { blocked: false; data: ScrapeOutcome };
 
 export interface ScrapeOptions {
   fetchImpl?: typeof fetch;
@@ -730,11 +736,12 @@ async function readLimitedText(
   return decodeBytes(combined);
 }
 
-function buildFallbackResponse(url: URL, reason: string): ScrapeLinkResponse {
+function buildFallbackResponse(url: URL, reason: string): ScrapeOutcome {
   const guessedTitle = guessTitleFromUrl(url);
   return {
     ok: false,
     fallback: true,
+    url: url.toString(),
     siteName: cleanSiteNameFromUrl(url),
     ...(guessedTitle ? { title: guessedTitle } : {}),
     reason,
@@ -863,6 +870,7 @@ export async function scrapeProductUrl(
       data: {
         ok: true,
         fallback: false,
+        url: currentUrl.toString(),
         ...(extracted.title
           ? { title: extracted.title }
           : fallbackTitle

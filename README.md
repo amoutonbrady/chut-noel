@@ -1,28 +1,30 @@
-# Chut ! Noël 🤫🎄
+# Liste d'envies — wish.amoutonbrady.dev
 
-Liste de souhaits de Noël **100 % anti-spoil** construite avec **SolidJS 2.0**, **Vite 8**, **Netlify Functions** et **Netlify Blobs**.
+Liste de souhaits personnelle anti-spoil pour toute l'année, construite avec **SolidJS 2**, **Vite**, **Netlify Functions** et **Netlify Blobs**.
 
-## Fonctionnalités
+## Architecture
 
-- **Anti-spoil garanti côté serveur** : les routes créateur (`/api/owner/:token`) n'accèdent jamais au store des réservations (`chut-noel-claims-*`).
-- **Bouclier Anti-Spoil côté navigateur** : si le créateur ouvre son propre lien partagé (`/list/:slug`), un écran bloqueur l'empêche de voir les réservations.
-- **Réservations solo & cadeaux groupés** : les proches peuvent réserver seuls ou s'y mettre à plusieurs avec prénom/surnom et petit mot de coordination.
-- **Scraping automatique de liens** : récupération OG / Twitter / JSON-LD (titre, photo, prix) avec emballage cadeau illustré procédural en secours.
-- **4 thèmes de Noël procéduraux** (*Atelier des Lutins*, *Chalet Cosy*, *Pôle Nord Néon*, *Boule à Neige Magique*), sons Web Audio activables en 1 clic et easter eggs cachés.
+- **Anti-spoil côté serveur** : les envies (`wishlist-items-*`) et les réservations (`wishlist-claims-*`) vivent dans deux stores Netlify Blobs séparés. L'API d'administration (`/api/admin/items`) n'importe et n'accède jamais au store des réservations.
+- **Accès public (`/`)** : consulte la liste, filtre par disponibilité, réserve en solo ou à plusieurs, et libère une réservation (avec jeton d'annulation local ou confirmation forcée).
+- **Gestion (`/admin`)** : protégée par `OWNER_TOKEN` (`Authorization: Bearer <token>`), avec ajout/édition/suppression et pré-remplissage automatique depuis une URL (`POST /api/scrape`).
 
-## Développement local
+## Configuration (`OWNER_TOKEN`)
+
+Définir la variable d'environnement `OWNER_TOKEN` dans Netlify (**Project configuration > Environment variables**) avant le déploiement en production :
+
+- En **production** (`CONTEXT=production`) : si `OWNER_TOKEN` n'est pas configurée, `/api/admin/*` et `/api/scrape` renvoient `503` (fail-closed).
+- En **développement local** : si `OWNER_TOKEN` n'est pas définie, la clé par défaut est `dev`.
+
+## Développement & vérification
 
 ```bash
 npm install
 npm run dev
-```
-
-`@netlify/vite-plugin` émule localement Netlify Functions et Netlify Blobs — aucune base de données externe ni variable d'environnement requise.
-
-## Tests & build
-
-```bash
 npm run typecheck
 npm test
 npm run build
 ```
+
+## Note sur le badge « Powered by Netlify »
+
+Aucun code du dépôt n'injecte de logo Netlify. Sur le plan **Netlify Free**, Netlify injecte automatiquement son badge en bas à droite au niveau du CDN (`/.netlify/scripts/hud?variant=public`). Pour le désactiver : **Netlify Dashboard > Project configuration > General > Powered by Netlify badge** (ou passer sur un plan payant si l'option est verrouillée sur Free).

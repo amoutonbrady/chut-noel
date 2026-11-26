@@ -13,7 +13,6 @@
   "dependencies": {
     "@netlify/blobs": "^11.1.11",
     "@netlify/functions": "^6.1.2",
-    "@oddbird/popover-polyfill": "^0.6.1",
     "@solidjs/web": "^2.0.4",
     "solid-js": "^2.0.4"
   },

@@ -1,35 +1,21 @@
+import { createHash, timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto";
 import { getStore } from "@netlify/blobs";
 import "@netlify/functions";
-import type {
-  ClaimMode,
-  GiftSize,
-  OwnerWishlistView,
-  PublicClaimsByItem,
-  PublicGuestClaim,
-  StoredClaimsMap,
-  StoredGuestClaim,
-  StoredWishlist,
-  ThemeId,
-  WishlistItem,
-} from "../../../src/shared/types";
+import type { ClaimMode, PublicClaim, WishItem } from "../../../src/shared/types";
 
-export const VALID_THEMES: readonly ThemeId[] = [
-  "lutins",
-  "chalet",
-  "neon",
-  "boule-a-neige",
-] as const;
+export const VALID_CLAIM_MODES: readonly ClaimMode[] = ["solo", "group"] as const;
 
-export const VALID_GIFT_SIZES: readonly GiftSize[] = [
-  "mini",
-  "moyen",
-  "geant",
-] as const;
+export interface StoredClaim {
+  id: string;
+  itemId: string;
+  mode: ClaimMode;
+  guestName?: string;
+  message?: string;
+  cancelTokenHash: string;
+  createdAt: string;
+}
 
-export const VALID_CLAIM_MODES: readonly ClaimMode[] = [
-  "solo",
-  "group",
-] as const;
+export type StoredClaimsMap = Record<string, StoredClaim[]>;
 
 export interface JsonBlobStore {
   get(key: string, options: { type: "json" }): Promise<unknown>;
@@ -43,26 +29,25 @@ export interface MemoryBlobStore extends JsonBlobStore {
   keys(): string[];
 }
 
-export interface TokenLookupRecord {
-  slug: string;
-}
+const ITEMS_KEY = "items";
+const CLAIMS_KEY = "claims";
 
-let listsStoreOverride: JsonBlobStore | null = null;
+let itemsStoreOverride: JsonBlobStore | null = null;
 let claimsStoreOverride: JsonBlobStore | null = null;
 
 export function setStoreOverrides(
   overrides: {
-    lists?: JsonBlobStore | null;
+    items?: JsonBlobStore | null;
     claims?: JsonBlobStore | null;
   } | null,
 ): void {
   if (overrides === null) {
-    listsStoreOverride = null;
+    itemsStoreOverride = null;
     claimsStoreOverride = null;
     return;
   }
-  if ("lists" in overrides) {
-    listsStoreOverride = overrides.lists ?? null;
+  if ("items" in overrides) {
+    itemsStoreOverride = overrides.items ?? null;
   }
   if ("claims" in overrides) {
     claimsStoreOverride = overrides.claims ?? null;
@@ -78,10 +63,7 @@ export function createMemoryBlobStore(): MemoryBlobStore {
     async get(key: string, _options: { type: "json" }): Promise<unknown> {
       reads += 1;
       const raw = data.get(key);
-      if (raw === undefined) {
-        return null;
-      }
-      return JSON.parse(raw) as unknown;
+      return raw === undefined ? null : (JSON.parse(raw) as unknown);
     },
     async setJSON(key: string, value: unknown): Promise<void> {
       writes += 1;
@@ -104,42 +86,46 @@ export function createMemoryBlobStore(): MemoryBlobStore {
   };
 }
 
-export function getNetlifyEnv(key: string): string | undefined {
+export function getEnv(key: string): string | undefined {
   if (typeof Netlify !== "undefined" && Netlify.env) {
-    return Netlify.env.get(key);
+    const val = Netlify.env.get(key);
+    if (val !== undefined) {
+      return val;
+    }
   }
-  return undefined;
+  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
+  return proc?.env?.[key];
 }
 
 export function getEnvSuffix(): "prod" | "dev" {
-  return getNetlifyEnv("CONTEXT") === "production" ? "prod" : "dev";
+  return getEnv("CONTEXT") === "production" ? "prod" : "dev";
 }
 
-export function getListsStoreName(): string {
-  return `chut-noel-lists-${getEnvSuffix()}`;
+export function getItemsStoreName(): string {
+  return `wishlist-items-${getEnvSuffix()}`;
 }
 
 export function getClaimsStoreName(): string {
-  return `chut-noel-claims-${getEnvSuffix()}`;
+  return `wishlist-claims-${getEnvSuffix()}`;
 }
 
 /**
- * Store dedicated strictly to wishlists and owner token lookups.
- * NEVER holds any reservation / claim data.
+ * Isolated store dedicated strictly to wishlist items.
+ * NEVER holds reservation or claim data.
  */
-export function getListsStore(): JsonBlobStore {
-  if (listsStoreOverride) {
-    return listsStoreOverride;
+export function getItemsStore(): JsonBlobStore {
+  if (itemsStoreOverride) {
+    return itemsStoreOverride;
   }
   return getStore({
-    name: getListsStoreName(),
+    name: getItemsStoreName(),
     consistency: "strong",
   });
 }
 
 /**
- * Store dedicated strictly to guest reservations / claims.
- * MUST NEVER be opened, imported, or read by `lists.mts` or `owner.mts`.
+ * Isolated store dedicated strictly to guest claims.
+ * MUST NEVER be imported or accessed by `admin.mts`.
  */
 export function getClaimsStore(): JsonBlobStore {
   if (claimsStoreOverride) {
@@ -151,80 +137,24 @@ export function getClaimsStore(): JsonBlobStore {
   });
 }
 
-export function listKey(slug: string): string {
-  return `list:${slug}`;
+export async function getStoredItems(
+  store: JsonBlobStore = getItemsStore(),
+): Promise<WishItem[]> {
+  const raw = await store.get(ITEMS_KEY, { type: "json" });
+  return Array.isArray(raw) ? (raw as WishItem[]) : [];
 }
 
-export function tokenKey(ownerTokenHash: string): string {
-  return `token:${ownerTokenHash}`;
-}
-
-export function claimsKey(slug: string): string {
-  return `claims:${slug}`;
-}
-
-export async function getStoredWishlistBySlug(
-  slug: string,
-  store: JsonBlobStore = getListsStore(),
-): Promise<StoredWishlist | null> {
-  const result = await store.get(listKey(slug), { type: "json" });
-  if (!result || typeof result !== "object") {
-    return null;
-  }
-  return result as StoredWishlist;
-}
-
-export async function saveStoredWishlist(
-  wishlist: StoredWishlist,
-  store: JsonBlobStore = getListsStore(),
+export async function saveStoredItems(
+  items: WishItem[],
+  store: JsonBlobStore = getItemsStore(),
 ): Promise<void> {
-  await store.setJSON(listKey(wishlist.slug), wishlist);
-}
-
-export async function saveOwnerTokenLookup(
-  ownerTokenHash: string,
-  slug: string,
-  store: JsonBlobStore = getListsStore(),
-): Promise<void> {
-  const record: TokenLookupRecord = { slug };
-  await store.setJSON(tokenKey(ownerTokenHash), record);
-}
-
-export async function getStoredWishlistByOwnerToken(
-  ownerToken: string,
-  store: JsonBlobStore = getListsStore(),
-): Promise<StoredWishlist | null> {
-  const cleaned = ownerToken.trim();
-  if (!cleaned) {
-    return null;
-  }
-  const tokenHash = await hashToken(cleaned);
-  const lookup = await store.get(tokenKey(tokenHash), { type: "json" });
-  if (
-    !lookup ||
-    typeof lookup !== "object" ||
-    typeof (lookup as TokenLookupRecord).slug !== "string"
-  ) {
-    return null;
-  }
-  const wishlist = await getStoredWishlistBySlug(
-    (lookup as TokenLookupRecord).slug,
-    store,
-  );
-  if (!wishlist) {
-    return null;
-  }
-  if (!timingSafeEqual(wishlist.ownerTokenHash, tokenHash)) {
-    return null;
-  }
-  return wishlist;
+  await store.setJSON(ITEMS_KEY, items);
 }
 
 export async function getStoredClaimsMap(
-  slug: string,
   store: JsonBlobStore = getClaimsStore(),
 ): Promise<StoredClaimsMap> {
-  const raw = await store.get(claimsKey(slug), { type: "json" });
+  const raw = await store.get(CLAIMS_KEY, { type: "json" });
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return {};
   }
@@ -232,11 +162,10 @@ export async function getStoredClaimsMap(
 }
 
 export async function saveStoredClaimsMap(
-  slug: string,
   claimsMap: StoredClaimsMap,
   store: JsonBlobStore = getClaimsStore(),
 ): Promise<void> {
-  await store.setJSON(claimsKey(slug), claimsMap);
+  await store.setJSON(CLAIMS_KEY, claimsMap);
 }
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -250,102 +179,50 @@ function bytesToBase64Url(bytes: Uint8Array): string {
     .replace(/=+$/g, "");
 }
 
-function bytesToHex(bytes: Uint8Array): string {
-  let hex = "";
-  for (let i = 0; i < bytes.length; i += 1) {
-    hex += bytes[i].toString(16).padStart(2, "0");
-  }
-  return hex;
-}
-
 export function generateSecretToken(byteLength = 24): string {
-  const safeLength = Math.max(24, Math.floor(byteLength));
-  const bytes = new Uint8Array(safeLength);
+  const bytes = new Uint8Array(Math.max(24, Math.floor(byteLength)));
   crypto.getRandomValues(bytes);
   return bytesToBase64Url(bytes);
-}
-
-export async function hashToken(token: string): Promise<string> {
-  const encoded = new TextEncoder().encode(token);
-  const digest = await crypto.subtle.digest("SHA-256", encoded);
-  return bytesToHex(new Uint8Array(digest));
-}
-
-export function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-}
-
-export function randomUint32(): number {
-  const buf = new Uint32Array(1);
-  crypto.getRandomValues(buf);
-  return buf[0];
 }
 
 export function generateId(): string {
   return crypto.randomUUID();
 }
 
-export function sanitizeSeed(input: unknown): number {
-  if (typeof input === "number" && Number.isFinite(input)) {
-    const normalized = Math.abs(Math.floor(input)) % 2_147_483_647;
-    return normalized > 0 ? normalized : 1;
-  }
-  return (randomUint32() % 999_999_999) + 1;
+export function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
-export function slugifySegment(value: string): string {
-  const normalized = value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 24)
-    .replace(/-+$/g, "");
-
-  return normalized || "lutin";
+/**
+ * Constant-time string comparison via fixed-length SHA-256 digests so
+ * `crypto.timingSafeEqual` never throws on length mismatch or leaks length.
+ */
+export function timingSafeEqualStrings(a: string, b: string): boolean {
+  const digestA = createHash("sha256").update(a).digest();
+  const digestB = createHash("sha256").update(b).digest();
+  return cryptoTimingSafeEqual(digestA, digestB);
 }
 
-export async function generateUniqueSlug(
-  ownerName: string,
-  store: JsonBlobStore = getListsStore(),
-): Promise<string> {
-  const base = slugifySegment(ownerName);
+export function requireOwnerAuth(req: Request): Response | null {
+  const isProd = getEnv("CONTEXT") === "production";
+  const configuredToken = getEnv("OWNER_TOKEN")?.trim();
 
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    const digits = 1000 + (randomUint32() % 9000);
-    const candidate = `noel-${base}-${digits}`;
-    const existing = await store.get(listKey(candidate), { type: "json" });
-    if (existing === null) {
-      return candidate;
-    }
+  if (isProd && !configuredToken) {
+    return errorResponse("OWNER_TOKEN non configuré", 503);
   }
 
-  const fallbackSuffix = bytesToHex(
-    crypto.getRandomValues(new Uint8Array(4)),
-  );
-  return `noel-${base}-${fallbackSuffix}`;
-}
+  // shortcut: dev fallback token "dev" when OWNER_TOKEN is unset outside production; set OWNER_TOKEN in Netlify env
+  const expectedToken = configuredToken || "dev";
 
-export function isValidTheme(value: unknown): value is ThemeId {
-  return (
-    typeof value === "string" &&
-    (VALID_THEMES as readonly string[]).includes(value)
-  );
-}
+  const authHeader = req.headers.get("authorization") ?? "";
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  const providedToken = match?.[1]?.trim();
 
-export function isValidGiftSize(value: unknown): value is GiftSize {
-  return (
-    typeof value === "string" &&
-    (VALID_GIFT_SIZES as readonly string[]).includes(value)
-  );
+  if (!providedToken || !timingSafeEqualStrings(providedToken, expectedToken)) {
+    return errorResponse("Accès non autorisé.", 401);
+  }
+
+  return null;
 }
 
 export function isValidClaimMode(value: unknown): value is ClaimMode {
@@ -363,13 +240,13 @@ export function sanitizeText(
   if (typeof value !== "string") {
     return undefined;
   }
-  let cleaned = value;
-  if (options?.allowNewlines) {
-    cleaned = cleaned.replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
-  } else {
-    cleaned = cleaned.replace(/[\u0000-\u001F\u007F]+/g, " ");
-  }
-  cleaned = cleaned.trim();
+  const cleaned = (
+    options?.allowNewlines
+      ? value
+          .replace(/\r\n?/g, "\n")
+          .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+      : value.replace(/[\u0000-\u001F\u007F]+/g, " ")
+  ).trim();
   if (!cleaned) {
     return undefined;
   }
@@ -407,12 +284,11 @@ export function sanitizeOptionalUrl(
   return { ok: true, value: parsed.toString() };
 }
 
-function cloneSafeItem(item: WishlistItem): WishlistItem {
-  const safe: WishlistItem = {
+/** Explicit field allowlist so item payloads never carry unexpected or claim fields. */
+export function cloneSafeItem(item: WishItem): WishItem {
+  const safe: WishItem = {
     id: item.id,
     title: item.title,
-    size: item.size,
-    wrapSeed: item.wrapSeed,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   };
@@ -424,53 +300,25 @@ function cloneSafeItem(item: WishlistItem): WishlistItem {
   return safe;
 }
 
-/**
- * STRICT ANTI-SPOIL SERIALIZER.
- * Uses an explicit field allowlist so `ownerTokenHash`, `claims`,
- * `claimsByItem`, or reservation counts can NEVER leak to the owner.
- */
-export function toOwnerWishlistView(stored: StoredWishlist): OwnerWishlistView {
-  const view: OwnerWishlistView = {
-    slug: stored.slug,
-    title: stored.title,
-    ownerName: stored.ownerName,
-    theme: stored.theme,
-    seed: stored.seed,
-    items: Array.isArray(stored.items) ? stored.items.map(cloneSafeItem) : [],
-    createdAt: stored.createdAt,
-    updatedAt: stored.updatedAt,
-  };
-  if (stored.subtitle !== undefined) {
-    view.subtitle = stored.subtitle;
-  }
-  return view;
-}
-
-/**
- * Strips `cancelCodeHash` before sending claims to guests.
- */
-export function toPublicClaim(stored: StoredGuestClaim): PublicGuestClaim {
-  const pub: PublicGuestClaim = {
+/** Strips `cancelTokenHash` before sending claims to public clients. */
+export function toPublicClaim(stored: StoredClaim): PublicClaim {
+  const pub: PublicClaim = {
     id: stored.id,
     itemId: stored.itemId,
     mode: stored.mode,
-    guestName: stored.guestName,
     createdAt: stored.createdAt,
   };
-  if (stored.message !== undefined) {
-    pub.message = stored.message;
-  }
+  if (stored.guestName !== undefined) pub.guestName = stored.guestName;
+  if (stored.message !== undefined) pub.message = stored.message;
   return pub;
 }
 
-/**
- * Filters claims to ONLY existing item IDs in the list and strips sensitive hashes.
- */
+/** Filters claims to existing item IDs only and strips sensitive token hashes. */
 export function toPublicClaimsByItem(
   rawClaims: StoredClaimsMap | null | undefined,
-  items: readonly WishlistItem[],
-): PublicClaimsByItem {
-  const result: PublicClaimsByItem = {};
+  items: readonly WishItem[],
+): Record<string, PublicClaim[]> {
+  const result: Record<string, PublicClaim[]> = {};
   if (!rawClaims || typeof rawClaims !== "object") {
     return result;
   }
@@ -530,10 +378,9 @@ export async function parseOptionalJsonBody(
   }
   try {
     const parsed = JSON.parse(text) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-    return null;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
   } catch {
     return null;
   }

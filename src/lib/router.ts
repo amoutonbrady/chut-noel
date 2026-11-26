@@ -2,9 +2,8 @@ import { createContext, createMemo, createSignal, onSettled } from "solid-js";
 import type { Accessor } from "solid-js";
 
 export type AppRoute =
-  | { kind: "home" }
-  | { kind: "owner"; token: string }
-  | { kind: "guest"; slug: string }
+  | { kind: "wishlist" }
+  | { kind: "admin" }
   | { kind: "not-found"; path: string };
 
 export interface RouterApi {
@@ -17,45 +16,9 @@ export const RouterContext = createContext<RouterApi>();
 
 export function parseRoute(pathname: string): AppRoute {
   const normalized = pathname.replace(/\/+$/, "") || "/";
-
-  if (normalized === "/") {
-    return { kind: "home" };
-  }
-
-  const editMatch = /^\/edit\/([^/]+)$/.exec(normalized);
-  if (editMatch?.[1]) {
-    try {
-      return { kind: "owner", token: decodeURIComponent(editMatch[1]) };
-    } catch {
-      return { kind: "owner", token: editMatch[1] };
-    }
-  }
-
-  const listMatch = /^\/list\/([^/]+)$/.exec(normalized);
-  if (listMatch?.[1]) {
-    try {
-      return { kind: "guest", slug: decodeURIComponent(listMatch[1]) };
-    } catch {
-      return { kind: "guest", slug: listMatch[1] };
-    }
-  }
-
+  if (normalized === "/") return { kind: "wishlist" };
+  if (normalized === "/admin") return { kind: "admin" };
   return { kind: "not-found", path: normalized };
-}
-
-export function buildOwnerPath(ownerToken: string): string {
-  return `/edit/${encodeURIComponent(ownerToken)}`;
-}
-
-export function buildGuestPath(slug: string): string {
-  return `/list/${encodeURIComponent(slug)}`;
-}
-
-export function buildAbsoluteUrl(path: string): string {
-  if (typeof window === "undefined") {
-    return path;
-  }
-  return `${window.location.origin}${path}`;
 }
 
 export function createRouter(): RouterApi {
@@ -66,13 +29,9 @@ export function createRouter(): RouterApi {
   const route = createMemo(() => parseRoute(pathname()));
 
   onSettled(() => {
-    const handlePopState = () => {
-      setPathname(window.location.pathname);
-    };
-    window.addEventListener("popstate", handlePopState);
-    return () => {
-      window.removeEventListener("popstate", handlePopState);
-    };
+    const onPopState = () => setPathname(window.location.pathname);
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   });
 
   const navigate = (to: string, options?: { replace?: boolean }) => {
