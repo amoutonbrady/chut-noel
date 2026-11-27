@@ -12,6 +12,7 @@ import type {
 
 const OWNER_TOKEN_KEY = "wish:owner-token";
 const GUEST_CLAIMS_KEY = "wish:guest-claims";
+const PROCHE_DEVICE_KEY = "wish:proche";
 
 export interface SavedClaimToken {
   claimId: string;
@@ -203,6 +204,27 @@ export function clearOwnerToken(): void {
     storage.removeItem(OWNER_TOKEN_KEY);
   } catch {
     // Ignore storage errors
+  }
+}
+
+/** Device explicitly marked as belonging to a guest (gate answered or `?proche` link). */
+export function isProcheDevice(): boolean {
+  const storage = getStorage();
+  if (!storage) return false;
+  try {
+    return storage.getItem(PROCHE_DEVICE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function markProcheDevice(): void {
+  const storage = getStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(PROCHE_DEVICE_KEY, "1");
+  } catch {
+    // Ignore storage errors: the gate will simply show again next visit
   }
 }
 

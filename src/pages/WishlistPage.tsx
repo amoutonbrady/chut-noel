@@ -19,9 +19,12 @@ import {
   ApiError,
   createClaim,
   deleteClaim,
+  fetchAdminItems,
   fetchWishlist,
   getOwnerToken,
   getSavedClaimTokens,
+  isProcheDevice,
+  markProcheDevice,
   removeClaimToken,
   saveClaimToken,
 } from "../lib/api";
@@ -558,6 +561,16 @@ function WishlistContent(props: WishlistContentProps) {
   );
 }
 
+const ListSkeleton = () => (
+  <div class="skeleton-wrap" aria-busy="true" aria-label="Chargement">
+    <div class="skeleton-hero" />
+    <div class="wish-grid">
+      <div class="skeleton-card" />
+      <div class="skeleton-card" />
+    </div>
+  </div>
+);
+
 function WishlistLoader() {
   const dataMemo = createMemo(() => fetchWishlist());
 
@@ -584,18 +597,7 @@ function WishlistLoader() {
         </section>
       )}
     >
-      <Loading
-        on="wishlist"
-        fallback={
-          <div class="skeleton-wrap" aria-busy="true" aria-label="Chargement">
-            <div class="skeleton-hero" />
-            <div class="wish-grid">
-              <div class="skeleton-card" />
-              <div class="skeleton-card" />
-            </div>
-          </div>
-        }
-      >
+      <Loading on="wishlist" fallback={<ListSkeleton />}>
         <WishlistContent
           data={dataMemo()}
           onRefresh={() => refresh(dataMemo)}
@@ -605,43 +607,135 @@ function WishlistLoader() {
   );
 }
 
+const noop = () => {};
+
+/** Alexandre's view: items only, read through the admin API which never touches claims. */
+function OwnerLoader(props: { token: string }) {
+  const router = useContext(RouterContext);
+  const dataMemo = createMemo(() => fetchAdminItems(props.token));
+
+  return (
+    <Errored
+      fallback={(err) => (
+        <section class="empty-card" role="alert">
+          <span class="empty-icon empty-icon--error" aria-hidden="true">
+            <AlertIcon size={22} />
+          </span>
+          <h2 class="empty-title">Impossible de charger ta liste</h2>
+          <p class="empty-desc">
+            {err() instanceof ApiError
+              ? (err() as ApiError).message
+              : "Une erreur réseau est survenue. Réessaie dans un instant."}
+          </p>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            onClick={() => router.navigate("/admin")}
+          >
+            Se reconnecter
+          </button>
+        </section>
+      )}
+    >
+      <Loading on="owner-items" fallback={<ListSkeleton />}>
+        <div class="wishlist-view">
+          <section class="hero reveal-soft">
+            <h1 class="hero-title">Ta liste d'envies</h1>
+            <p class="hero-subtitle">
+              Telle que tes proches la voient, sans aucune réservation : pas de
+              spoil possible ici.
+            </p>
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              onClick={() => router.navigate("/admin")}
+            >
+              Gérer ma liste
+            </button>
+          </section>
+
+          <Show
+            when={dataMemo().items.length > 0}
+            fallback={
+              <section class="empty-card reveal-soft">
+                <span class="empty-icon" aria-hidden="true">
+                  <GiftIcon size={22} />
+                </span>
+                <h2 class="empty-title">Ta liste est encore vide</h2>
+                <p class="empty-desc">
+                  Ajoute tes premières envies depuis l'espace gestion.
+                </p>
+              </section>
+            }
+          >
+            <section class="wish-grid reveal-soft" aria-label="Mes envies">
+              <For each={dataMemo().items}>
+                {(item) => (
+                  <WishCard
+                    item={item}
+                    owner
+                    claims={[]}
+                    myTokens={[]}
+                    onReserve={noop}
+                    onCancelMine={noop}
+                    onRequestRelease={noop}
+                  />
+                )}
+              </For>
+            </section>
+          </Show>
+        </div>
+      </Loading>
+    </Errored>
+  );
+}
+
 export function WishlistPage() {
   const router = useContext(RouterContext);
-  const [hasOwnerSession] = createSignal(Boolean(getOwnerToken()));
-  const [bypassGuard, setBypassGuard] = createSignal(false);
+  // Owner session always wins: Alexandre never sees claims, even via a `?proche` link
+  const ownerToken = getOwnerToken();
+  if (ownerToken) {
+    return <OwnerLoader token={ownerToken} />;
+  }
+
+  // The shared link carries `?proche` so guests skip the gate
+  if (new URLSearchParams(window.location.search).has("proche")) {
+    markProcheDevice();
+  }
+  const [isProche, setIsProche] = createSignal(isProcheDevice());
 
   return (
     <Show
-      when={!hasOwnerSession() || bypassGuard()}
+      when={isProche()}
       fallback={
-        <section
-          class="guard-card reveal-soft"
-          aria-labelledby="anti-spoil-heading"
-        >
+        <section class="guard-card reveal-soft" aria-labelledby="gate-heading">
           <div class="guard-icon" aria-hidden="true">
             <ShieldIcon size={22} />
           </div>
-          <h1 id="anti-spoil-heading" class="guard-title">
-            Tu es connecté en mode gestion
+          <h1 id="gate-heading" class="guard-title">
+            Qui es-tu ?
           </h1>
           <p class="guard-desc">
-            Ouvre l'espace gestion pour ajouter ou modifier tes envies sans voir
-            les réservations, ou continue vers la liste publique.
+            Cette liste montre qui offre quoi. Pour garder la surprise,
+            Alexandre ne doit pas voir les réservations.
           </p>
           <div class="guard-actions">
             <button
               type="button"
               class="btn btn-primary"
-              onClick={() => router.navigate("/admin")}
+              onClick={() => {
+                markProcheDevice();
+                setIsProche(true);
+              }}
             >
-              Ouvrir /admin
+              Je suis un·e proche
             </button>
             <button
               type="button"
               class="btn btn-ghost"
-              onClick={() => setBypassGuard(true)}
+              onClick={() => router.navigate("/admin")}
             >
-              Continuer vers la liste publique
+              Je suis Alexandre
             </button>
           </div>
         </section>

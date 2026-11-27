@@ -36,7 +36,8 @@ import {
 import { ModalDialog } from "../components/ModalDialog";
 import { ToastContext } from "../components/ToastHost";
 
-const PUBLIC_SHARE_URL = "https://wish.amoutonbrady.dev";
+// `?proche` marks the guest's device so they skip the "who are you?" gate
+const PUBLIC_SHARE_URL = "https://wish.amoutonbrady.dev/?proche";
 
 interface ItemDraft {
   title: string;
@@ -205,7 +206,7 @@ export function AdminPage() {
   const handleCopyShareUrl = async () => {
     const ok = await copyToClipboard(PUBLIC_SHARE_URL);
     if (ok) {
-      toast.show("Lien copié : wish.amoutonbrady.dev");
+      toast.show("Lien copié : wish.amoutonbrady.dev/?proche");
     } else {
       toast.show("Copie impossible — sélectionnez l'adresse manuellement.", "error");
     }

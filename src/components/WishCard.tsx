@@ -13,6 +13,8 @@ import {
 
 export interface WishCardProps {
   item: WishItem;
+  /** Alexandre's view: hide every status badge and action. */
+  owner?: boolean;
   claims: PublicClaim[];
   myTokens: SavedClaimToken[];
   justReserved?: boolean;
@@ -127,6 +129,7 @@ export function WishCard(props: WishCardProps) {
           />
         </Show>
 
+        <Show when={!props.owner}>
         <div class="wish-status-overlay">
           <Show
             when={myClaimEntry()}
@@ -168,6 +171,7 @@ export function WishCard(props: WishCardProps) {
             </span>
           </Show>
         </div>
+        </Show>
       </div>
 
       <div class="wish-body">
@@ -230,6 +234,7 @@ export function WishCard(props: WishCardProps) {
           </div>
         </Show>
 
+        <Show when={!props.owner}>
         <div class="wish-actions">
           <Show when={!isReserved()}>
             <button
@@ -283,6 +288,7 @@ export function WishCard(props: WishCardProps) {
             </button>
           </Show>
         </div>
+        </Show>
       </div>
     </article>
   );
