@@ -4,7 +4,7 @@
    ========================================================================== */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   --bg-body: #f8f9fb;
   --bg-card: #ffffff;
@@ -78,51 +78,52 @@
   --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-body: #0c0f13;
-    --bg-card: #12161c;
-    --bg-well: #090b0e;
-    --bg-hover: #191e24;
-    --bg-header: rgba(12, 15, 19, 0.78);
-    --bg-media: #ffffff;
+/* Dark tokens: index.html sets data-theme before first paint */
+:root[data-theme="dark"] {
+  color-scheme: dark;
 
-    --border-primary: #2a313b;
-    --border-subtle: #1d2229;
-    --border-strong: #3a4350;
-    --border-input: #5f6773;
+  --bg-body: #0c0f13;
+  --bg-card: #12161c;
+  --bg-well: #090b0e;
+  --bg-hover: #191e24;
+  --bg-header: rgba(12, 15, 19, 0.78);
+  --bg-media: #ffffff;
 
-    --text-primary: #f2f4f7;
-    --text-secondary: #e6e9ee;
-    --text-muted: #a2a7b0;
+  --border-primary: #2a313b;
+  --border-subtle: #1d2229;
+  --border-strong: #3a4350;
+  --border-input: #5f6773;
 
-    --accent: #0aa0ef;
-    --accent-hover: #3db8f5;
-    --on-accent: #090b0e;
-    --accent-soft-bg: rgba(10, 160, 239, 0.18);
-    --accent-soft-text: #d0edfb;
-    --focus-ring: 0 0 0 3px rgba(10, 160, 239, 0.3);
+  --text-primary: #f2f4f7;
+  --text-secondary: #e6e9ee;
+  --text-muted: #a2a7b0;
 
-    --ok-bg: rgba(34, 197, 94, 0.14);
-    --ok-text: #86efac;
-    --ok-border: rgba(134, 239, 172, 0.25);
+  --accent: #0aa0ef;
+  --accent-hover: #3db8f5;
+  --on-accent: #090b0e;
+  --accent-soft-bg: rgba(10, 160, 239, 0.18);
+  --accent-soft-text: #d0edfb;
+  --focus-ring: 0 0 0 3px rgba(10, 160, 239, 0.3);
 
-    --danger: #ef4444;
-    --danger-hover: #f87171;
-    --danger-soft-bg: rgba(239, 68, 68, 0.16);
-    --danger-soft-text: #fca5a5;
-    --danger-border: rgba(248, 113, 113, 0.28);
+  --ok-bg: rgba(34, 197, 94, 0.14);
+  --ok-text: #86efac;
+  --ok-border: rgba(134, 239, 172, 0.25);
 
-    --top-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.07);
-    --shadow-card: 0 0 0 1px oklch(1 0 0 / 0.08);
-    --shadow-card-hover:
-      0 0 0 1px oklch(1 0 0 / 0.13), 0 12px 24px -12px rgba(0, 0, 0, 0.6);
-    --shadow-control: 0 0 0 1px oklch(1 0 0 / 0.09), 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-overlay:
-      0 0 0 1px oklch(1 0 0 / 0.1), 0 28px 64px -16px rgba(0, 0, 0, 0.72);
-    --image-outline: oklch(1 0 0 / 0.1);
-    --ambient-color: rgba(10, 160, 239, 0.11);
-  }
+  --danger: #ef4444;
+  --danger-hover: #f87171;
+  --danger-soft-bg: rgba(239, 68, 68, 0.16);
+  --danger-soft-text: #fca5a5;
+  --danger-border: rgba(248, 113, 113, 0.28);
+
+  --top-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --shadow-card: 0 0 0 1px oklch(1 0 0 / 0.08);
+  --shadow-card-hover:
+    0 0 0 1px oklch(1 0 0 / 0.13), 0 12px 24px -12px rgba(0, 0, 0, 0.6);
+  --shadow-control: 0 0 0 1px oklch(1 0 0 / 0.09), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-overlay:
+    0 0 0 1px oklch(1 0 0 / 0.1), 0 28px 64px -16px rgba(0, 0, 0, 0.72);
+  --image-outline: oklch(1 0 0 / 0.1);
+  --ambient-color: rgba(10, 160, 239, 0.11);
 }
 
 /* ==========================================================================
@@ -260,6 +261,23 @@ a {
   letter-spacing: -0.015em;
   color: var(--text-primary);
   border-radius: var(--radius-xs);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Small nudge on hover; the page itself cross-fades on toggle (View Transitions) */
+.theme-toggle svg {
+  transition: rotate var(--dur-enter) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .theme-toggle:hover svg {
+    rotate: 15deg;
+  }
 }
 
 .brand-mark {
@@ -670,15 +688,13 @@ a {
 }
 
 /* Dark mode: dim the white product tile as a whole so it does not glare */
-@media (prefers-color-scheme: dark) {
-  .wish-img,
-  .admin-item-thumb img {
-    filter: brightness(0.9);
-  }
+[data-theme="dark"] .wish-img,
+[data-theme="dark"] .admin-item-thumb img {
+  filter: brightness(0.9);
+}
 
-  .wish-row--reserved .wish-img {
-    filter: grayscale(1) brightness(0.72);
-  }
+[data-theme="dark"] .wish-row--reserved .wish-img {
+  filter: grayscale(1) brightness(0.72);
 }
 
 /* Gift-wrap placeholder: per-item hue from the title, ribbon crossing, name tag */
@@ -696,12 +712,10 @@ a {
     var(--paper);
 }
 
-@media (prefers-color-scheme: dark) {
-  .wish-placeholder {
-    --paper: oklch(0.25 0.025 var(--hue, 230));
-    --ribbon: oklch(0.31 0.045 var(--hue, 230));
-    --ink: oklch(0.88 0.06 var(--hue, 230));
-  }
+[data-theme="dark"] .wish-placeholder {
+  --paper: oklch(0.25 0.025 var(--hue, 230));
+  --ribbon: oklch(0.31 0.045 var(--hue, 230));
+  --ink: oklch(0.88 0.06 var(--hue, 230));
 }
 
 .wish-monogram {

@@ -1,6 +1,7 @@
 import { Match, Show, Switch, useContext } from "solid-js";
 import { createRouter, RouterContext } from "./lib/router";
 import { ArrowLeftIcon, GiftIcon } from "./components/Icons";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { ToastProvider } from "./components/ToastHost";
 import { AdminPage } from "./pages/AdminPage";
 import { WishlistPage } from "./pages/WishlistPage";
@@ -39,7 +40,8 @@ function AppShell() {
             <span class="brand-name">Envies d'Alexandre</span>
           </a>
 
-          <nav aria-label="Navigation principale">
+          <nav class="header-actions" aria-label="Navigation principale">
+            <ThemeToggle />
             <Show
               when={isAdmin()}
               fallback={
