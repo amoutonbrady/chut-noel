@@ -321,49 +321,96 @@ a {
     z-index: 2;
   }
 
-  /* Grid/List & Filter/Sort morphing: disable root snapshot, morph individual cards */
-  html[data-list-transition="morph"] {
+  /* Suppress initial CSS entrance animation while a View Transition runs */
+  html[data-list-transition] .wish-collection > * {
+    animation: none !important;
+  }
+
+  /* Sort & Filter reordering: calm, unhurried glide with zero overshoot */
+  html[data-list-transition="reorder"] {
     view-transition-name: none;
   }
 
-  html[data-list-transition="morph"] .wish-card {
+  html[data-list-transition="reorder"] .wish-card {
     view-transition-name: var(--vt-name);
     view-transition-class: wish-card-item;
   }
 
   ::view-transition-group(.wish-card-item) {
-    animation-duration: 320ms;
-    animation-timing-function: ease-out;
-    animation-timing-function: linear(0, 0.44 16%, 1.03 44%, 0.99 72%, 1);
+    animation-duration: 380ms;
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   ::view-transition-old(.wish-card-item),
   ::view-transition-new(.wish-card-item) {
     height: 100%;
-    object-fit: cover;
-    border-radius: var(--radius-md);
+    width: 100%;
   }
 
   ::view-transition-new(.wish-card-item):only-child {
-    animation: vt-card-in 240ms var(--ease-out) both;
+    animation: vt-card-in 260ms var(--ease-out) both;
   }
 
   ::view-transition-old(.wish-card-item):only-child {
-    animation: vt-card-out 180ms ease-in both;
+    animation: vt-card-out 180ms var(--ease-out) both;
+  }
+
+  /* List <-> Grid layout switch: clean cross-dissolve without stretching aspect ratios */
+  html[data-list-transition="switch"] {
+    view-transition-name: none;
+  }
+
+  html[data-list-transition="switch"] .wish-collection {
+    view-transition-name: wish-stage;
+  }
+
+  ::view-transition-group(wish-stage) {
+    animation: none;
+  }
+
+  ::view-transition-image-pair(wish-stage) {
+    overflow: visible;
+  }
+
+  ::view-transition-old(wish-stage),
+  ::view-transition-new(wish-stage) {
+    width: 100%;
+    height: auto;
+  }
+
+  ::view-transition-old(wish-stage) {
+    animation: vt-stage-out 140ms var(--ease-out) both;
+  }
+
+  ::view-transition-new(wish-stage) {
+    animation: vt-stage-in 220ms var(--ease-out) both;
   }
 }
 
 @keyframes vt-card-in {
   from {
     opacity: 0;
-    transform: scale(0.95) translateY(8px);
+    transform: translateY(6px) scale(0.985);
   }
 }
 
 @keyframes vt-card-out {
   to {
     opacity: 0;
-    transform: scale(0.95);
+    transform: scale(0.985);
+  }
+}
+
+@keyframes vt-stage-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes vt-stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
 }
 
@@ -1371,6 +1418,7 @@ a {
   column-gap: 1.125rem;
   row-gap: 0.875rem;
   padding: 1.15rem;
+  background: var(--bg-card);
   transition: background-color var(--dur-fast) var(--ease-out);
 }
 

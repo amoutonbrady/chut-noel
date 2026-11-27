@@ -1,4 +1,4 @@
-import { createSignal, onSettled } from "solid-js";
+import { createSignal, flush, onSettled } from "solid-js";
 import { MoonIcon, SunIcon } from "./Icons";
 
 type Theme = "light" | "dark";
@@ -73,10 +73,10 @@ export function ThemeToggle() {
       const root = document.documentElement;
       root.dataset.themeTransition = "reveal";
 
-      const transition = document.startViewTransition(async () => {
+      const transition = document.startViewTransition(() => {
         swap();
-        // Wait a microtask so Solid flushes the updated Sun/Moon icon before capture
-        await Promise.resolve();
+        // Flush Solid 2 signals synchronously so the Sun/Moon icon updates before capture
+        flush();
       });
 
       void transition.ready

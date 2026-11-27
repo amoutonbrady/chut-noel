@@ -168,19 +168,19 @@ export function ViewModeToggle(props: {
       </Show>
       <ToggleGroup.Item
         class="segmented-btn segmented-btn--icon"
-        value="grid"
-        aria-label="Affichage en grille"
-        title="Affichage en grille"
-      >
-        <LayoutGridIcon size={15} />
-      </ToggleGroup.Item>
-      <ToggleGroup.Item
-        class="segmented-btn segmented-btn--icon"
         value="list"
         aria-label="Affichage en liste"
         title="Affichage en liste"
       >
         <RowsIcon size={15} />
+      </ToggleGroup.Item>
+      <ToggleGroup.Item
+        class="segmented-btn segmented-btn--icon"
+        value="grid"
+        aria-label="Affichage en grille"
+        title="Affichage en grille"
+      >
+        <LayoutGridIcon size={15} />
       </ToggleGroup.Item>
     </ToggleGroup>
   );

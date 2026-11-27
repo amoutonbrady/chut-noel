@@ -3,6 +3,7 @@ import {
   createSignal,
   createUniqueId,
   Errored,
+  flush,
   For,
   Loading,
   onSettled,
@@ -66,7 +67,7 @@ function loadViewMode(): ViewMode {
   } catch {
     // Ignore storage errors
   }
-  return "grid";
+  return "list";
 }
 
 function saveViewMode(mode: ViewMode): void {
@@ -77,8 +78,18 @@ function saveViewMode(mode: ViewMode): void {
   }
 }
 
-/** Smoothly morph cards on Grid/List or Filter/Sort updates when View Transitions are supported. */
-function runListTransition(update: () => void): void {
+let listTransitionSeq = 0;
+
+/**
+ * Coordinates Solid 2 DOM flushing with the View Transitions API:
+ * - "reorder": glides individual cards gently when sorting or filtering within the same layout.
+ * - "switch": clean cross-dissolve of the collection when switching between List and Grid
+ *   (avoids distorting wide horizontal rows into vertical cards).
+ */
+function runListTransition(
+  kind: "reorder" | "switch",
+  update: () => void,
+): void {
   const reduce =
     typeof window !== "undefined" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -91,15 +102,21 @@ function runListTransition(update: () => void): void {
     return;
   }
   const root = document.documentElement;
-  // Avoid overlapping with the circular theme reveal
   if (root.dataset.themeTransition) {
     update();
     return;
   }
-  root.dataset.listTransition = "morph";
-  const transition = document.startViewTransition(update);
+  const seq = ++listTransitionSeq;
+  root.dataset.listTransition = kind;
+  const transition = document.startViewTransition(() => {
+    update();
+    // Solid 2 batches signal writes asynchronously; flush synchronously before new snapshot
+    flush();
+  });
   void transition.finished.finally(() => {
-    delete root.dataset.listTransition;
+    if (listTransitionSeq === seq) {
+      delete root.dataset.listTransition;
+    }
   });
 }
 
@@ -219,7 +236,7 @@ function WishlistContent(props: WishlistContentProps) {
 
   const filtersActive = () => filter() !== "all" || budget() !== null;
   const resetFilters = () => {
-    runListTransition(() => {
+    runListTransition("reorder", () => {
       setFilter("all");
       setBudget(null);
     });
@@ -227,18 +244,18 @@ function WishlistContent(props: WishlistContentProps) {
 
   const handleFilterChange = (next: AvailabilityFilter) => {
     if (next === filter()) return;
-    runListTransition(() => setFilter(next));
+    runListTransition("reorder", () => setFilter(next));
   };
 
   const handleSortChange = (next: SortKey) => {
     if (next === sort()) return;
-    runListTransition(() => setSort(next));
+    runListTransition("reorder", () => setSort(next));
   };
 
   const handleViewChange = (mode: ViewMode) => {
     if (mode === viewMode()) return;
     saveViewMode(mode);
-    runListTransition(() => setViewMode(mode));
+    runListTransition("switch", () => setViewMode(mode));
   };
 
   const targetExistingClaims = createMemo(() => {
@@ -895,13 +912,13 @@ function OwnerLoader(props: { token: string }) {
               </section>
             }
           >
-            <ul class="wish-collection wish-collection--grid" aria-label="Mes envies">
+            <ul class="wish-collection wish-collection--list" aria-label="Mes envies">
               <For each={dataMemo().items} keyed={(item) => item.id}>
                 {(item) => (
                   <WishCard
                     item={item()}
                     owner
-                    layout="grid"
+                    layout="list"
                     claims={[]}
                     myTokens={[]}
                     onReserve={noop}
