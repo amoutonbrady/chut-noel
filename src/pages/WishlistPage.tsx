@@ -30,12 +30,18 @@ import {
 } from "../lib/api";
 import type { SavedClaimToken } from "../lib/api";
 import { RouterContext } from "../lib/router";
-import { AlertIcon, GiftIcon, ShieldIcon, UsersIcon } from "../components/Icons";
+import { AlertIcon, GiftIcon, PencilIcon, ShieldIcon, UsersIcon } from "../components/Icons";
 import { ModalDialog } from "../components/ModalDialog";
 import { ToastContext } from "../components/ToastHost";
 import { WishCard } from "../components/WishCard";
 
 type FilterMode = "all" | "available" | "reserved";
+
+// Opening the keyboard on a phone hides half the dialog: autofocus only with a mouse
+const finePointer = () =>
+  typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches;
+
+const guestLabel = (claim: PublicClaim) => claim.guestName?.trim() || "Un proche";
 
 interface WishlistContentProps {
   data: WishlistPublicResponse;
@@ -52,7 +58,9 @@ function WishlistContent(props: WishlistContentProps) {
   const [justReservedId, setJustReservedId] = createSignal<string | null>(null);
   const [busyItemId, setBusyItemId] = createSignal<string | null>(null);
 
-  // Reserve / participate modal state
+  // Reserve / participate dialog. `open` is separate from the target so the
+  // content stays put while the dialog fades out.
+  const [reserveOpen, setReserveOpen] = createSignal(false);
   const [reserveTarget, setReserveTarget] = createSignal<WishItem | null>(null);
   const [reserveMode, setReserveMode] = createSignal<ClaimMode>("solo");
   const [guestName, setGuestName] = createSignal("");
@@ -60,7 +68,8 @@ function WishlistContent(props: WishlistContentProps) {
   const [submitting, setSubmitting] = createSignal(false);
   const [formError, setFormError] = createSignal<string | null>(null);
 
-  // Force-release confirm modal state
+  // Release dialog
+  const [releaseOpen, setReleaseOpen] = createSignal(false);
   const [releaseTarget, setReleaseTarget] = createSignal<{
     item: WishItem;
     claims: PublicClaim[];
@@ -70,6 +79,7 @@ function WishlistContent(props: WishlistContentProps) {
 
   const nameInputId = createUniqueId();
   const msgInputId = createUniqueId();
+  const modeName = createUniqueId();
 
   const items = createMemo(() => props.data.items);
   const claimsByItem = createMemo(() => props.data.claimsByItem);
@@ -97,9 +107,14 @@ function WishlistContent(props: WishlistContentProps) {
     return claimsByItem()[target.id] ?? [];
   });
 
-  const targetIsGroup = createMemo(() =>
-    targetExistingClaims().some((c) => c.mode === "group"),
+  // Frozen while closed, so the closing dialog does not swap its title mid-fade
+  const targetIsGroup = createMemo<boolean>((prev) =>
+    reserveOpen()
+      ? targetExistingClaims().some((c) => c.mode === "group")
+      : (prev ?? false),
   );
+
+  const groupChosen = () => targetIsGroup() || reserveMode() === "group";
 
   const openReserveModal = (item: WishItem, mode: ClaimMode) => {
     const existing = claimsByItem()[item.id] ?? [];
@@ -109,12 +124,7 @@ function WishlistContent(props: WishlistContentProps) {
     setGuestName("");
     setGuestMessage("");
     setFormError(null);
-  };
-
-  const closeReserveModal = () => {
-    if (submitting()) return;
-    setReserveTarget(null);
-    setFormError(null);
+    setReserveOpen(true);
   };
 
   const handleSubmitClaim = async (e: SubmitEvent) => {
@@ -143,12 +153,12 @@ function WishlistContent(props: WishlistContentProps) {
       });
       setMyTokens(getSavedClaimTokens());
       setJustReservedId(target.id);
-      setReserveTarget(null);
+      setReserveOpen(false);
       props.onRefresh();
       toast.show(
         mode === "group"
-          ? "Participation enregistrée."
-          : "Envie réservée — Alexandre n'en saura rien.",
+          ? "Tu participes au cadeau groupé."
+          : "C'est réservé. Alexandre n'en saura rien.",
       );
     } catch (err) {
       if (err instanceof ApiError) {
@@ -157,7 +167,9 @@ function WishlistContent(props: WishlistContentProps) {
           props.onRefresh();
         }
       } else {
-        setFormError("Impossible d'enregistrer la réservation pour le moment.");
+        setFormError(
+          "La réservation n'a pas pu être enregistrée. Vérifie ta connexion et réessaie.",
+        );
       }
     } finally {
       setSubmitting(false);
@@ -177,18 +189,22 @@ function WishlistContent(props: WishlistContentProps) {
       setMyTokens(getSavedClaimTokens());
       if (justReservedId() === item.id) setJustReservedId(null);
       props.onRefresh();
-      toast.show("Réservation annulée.");
+      toast.show(
+        claim.mode === "group"
+          ? "Tu ne participes plus à ce cadeau."
+          : "Réservation annulée. L'envie est de nouveau disponible.",
+      );
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         removeClaimToken(claim.id);
         setMyTokens(getSavedClaimTokens());
         props.onRefresh();
-        toast.show("Cette réservation avait déjà été libérée.", "info");
+        toast.show("Cette réservation avait déjà été annulée.", "info");
       } else {
         toast.show(
           err instanceof ApiError
             ? err.message
-            : "Impossible d'annuler la réservation.",
+            : "L'annulation n'a pas abouti. Réessaie dans un instant.",
           "error",
         );
       }
@@ -199,76 +215,96 @@ function WishlistContent(props: WishlistContentProps) {
 
   const handleForceRelease = async (claimId: string) => {
     if (releasingId()) return;
+    const target = releaseTarget();
     setReleasingId(claimId);
     setReleaseError(null);
     try {
       await deleteClaim(claimId, { force: true });
       removeClaimToken(claimId);
       setMyTokens(getSavedClaimTokens());
-      setReleaseTarget(null);
+      // Pre-refresh data: the item is free only if this was its last claim
+      const freed = target
+        ? (claimsByItem()[target.item.id]?.length ?? 0) <= 1
+        : false;
+      // Several participants: drop the released row and keep the dialog open
+      const remaining = target?.claims.filter((c) => c.id !== claimId) ?? [];
+      if (target && remaining.length > 0) {
+        setReleaseTarget({ item: target.item, claims: remaining });
+      } else {
+        setReleaseOpen(false);
+      }
       props.onRefresh();
-      toast.show("Réservation libérée.");
+      toast.show(
+        freed ? "L'envie est de nouveau disponible." : "Participation retirée.",
+      );
     } catch (err) {
       setReleaseError(
         err instanceof ApiError
           ? err.message
-          : "Impossible de libérer cette réservation.",
+          : "Impossible de retirer cette réservation. Réessaie dans un instant.",
       );
     } finally {
       setReleasingId(null);
     }
   };
 
+  // Live: true when releasing every listed claim leaves the item with none
+  const releaseFreesItem = () => {
+    const t = releaseTarget();
+    return t ? t.claims.length >= (claimsByItem()[t.item.id]?.length ?? 0) : false;
+  };
+
+  const emptyCopy = () => {
+    if (items().length === 0) {
+      return {
+        title: "La liste est encore vide",
+        desc: "Alexandre n'a pas encore ajouté d'idées. Repasse bientôt !",
+      };
+    }
+    if (filter() === "available") {
+      return {
+        title: "Tout est déjà réservé",
+        desc: "Affiche toutes les envies pour rejoindre un cadeau groupé.",
+      };
+    }
+    return {
+      title: "Rien n'est réservé pour l'instant",
+      desc: "Choisis une envie : une fois réservée, personne d'autre ne pourra la prendre.",
+    };
+  };
+
+  const filters: { value: FilterMode; label: string; count: () => number }[] = [
+    { value: "all", label: "Toutes", count: () => items().length },
+    { value: "available", label: "Disponibles", count: availableCount },
+    { value: "reserved", label: "Réservées", count: reservedCount },
+  ];
+
   return (
     <div class="wishlist-view">
       <section class="hero reveal-soft">
-        <h1 class="hero-title">Liste d'envies</h1>
+        <h1 class="hero-title">Une idée pour Alexandre&nbsp;?</h1>
         <p class="hero-subtitle">
-          Des idées pour toute l'année — réservez librement, Alexandre ne voit
-          pas qui offre quoi.
+          Choisis une envie et réserve-la. Les autres proches verront qu'elle
+          est prise&nbsp;; Alexandre, lui, ne verra rien.
         </p>
       </section>
 
       <Show when={items().length > 0}>
         <div class="toolbar reveal-soft">
-          <div
-            class="segmented"
-            role="group"
-            aria-label="Filtrer les envies"
-          >
-            <button
-              type="button"
-              class={["segmented-btn", { "is-active": filter() === "all" }]}
-              aria-pressed={filter() === "all" ? "true" : "false"}
-              onClick={() => setFilter("all")}
-            >
-              <span>Toutes</span>
-              <span class="segmented-count">{items().length}</span>
-            </button>
-            <button
-              type="button"
-              class={[
-                "segmented-btn",
-                { "is-active": filter() === "available" },
-              ]}
-              aria-pressed={filter() === "available" ? "true" : "false"}
-              onClick={() => setFilter("available")}
-            >
-              <span>Disponibles</span>
-              <span class="segmented-count">{availableCount()}</span>
-            </button>
-            <button
-              type="button"
-              class={[
-                "segmented-btn",
-                { "is-active": filter() === "reserved" },
-              ]}
-              aria-pressed={filter() === "reserved" ? "true" : "false"}
-              onClick={() => setFilter("reserved")}
-            >
-              <span>Réservées</span>
-              <span class="segmented-count">{reservedCount()}</span>
-            </button>
+          <div class="segmented" role="group" aria-label="Filtrer les envies">
+            <For each={filters}>
+              {(f) => (
+                <button
+                  type="button"
+                  class={["segmented-btn", { "is-active": filter() === f.value }]}
+                  aria-pressed={filter() === f.value ? "true" : "false"}
+                  onClick={() => setFilter(f.value)}
+                >
+                  <span>{f.label}</span>
+                  <span class="segmented-count">{f.count()}</span>
+                </button>
+              )}
+            </For>
           </div>
         </div>
       </Show>
@@ -280,20 +316,8 @@ function WishlistContent(props: WishlistContentProps) {
             <span class="empty-icon" aria-hidden="true">
               <GiftIcon size={22} />
             </span>
-            <h2 class="empty-title">
-              {items().length === 0
-                ? "La liste est encore vide"
-                : filter() === "available"
-                  ? "Toutes les envies sont réservées"
-                  : "Aucune envie réservée pour le moment"}
-            </h2>
-            <p class="empty-desc">
-              {items().length === 0
-                ? "Alexandre n'a pas encore ajouté d'idées. Revenez bientôt !"
-                : filter() === "available"
-                  ? "Vous pouvez afficher toutes les envies pour rejoindre une idée à plusieurs."
-                  : "Choisissez une idée dans la liste pour la réserver en toute discrétion."}
-            </p>
+            <h2 class="empty-title">{emptyCopy().title}</h2>
+            <p class="empty-desc">{emptyCopy().desc}</p>
             <Show when={items().length > 0 && filter() !== "all"}>
               <button
                 type="button"
@@ -306,15 +330,16 @@ function WishlistContent(props: WishlistContentProps) {
           </section>
         }
       >
-        <section class="wish-grid reveal-soft" aria-label="Liste des envies">
-          <For each={filteredItems()}>
+        <section class="wish-grid" aria-label="Envies">
+          {/* Keyed by id: a refresh after reserving keeps each card mounted */}
+          <For each={filteredItems()} keyed={(item) => item.id}>
             {(item) => (
               <WishCard
-                item={item}
-                claims={claimsByItem()[item.id] ?? []}
-                myTokens={myTokens().filter((t) => t.itemId === item.id)}
-                justReserved={justReservedId() === item.id}
-                busy={busyItemId() === item.id}
+                item={item()}
+                claims={claimsByItem()[item().id] ?? []}
+                myTokens={myTokens().filter((t) => t.itemId === item().id)}
+                justReserved={justReservedId() === item().id}
+                busy={busyItemId() === item().id}
                 onReserve={openReserveModal}
                 onCancelMine={(it, claim, token) =>
                   void handleCancelMine(it, claim, token)
@@ -322,6 +347,7 @@ function WishlistContent(props: WishlistContentProps) {
                 onRequestRelease={(it, claims) => {
                   setReleaseError(null);
                   setReleaseTarget({ item: it, claims });
+                  setReleaseOpen(true);
                 }}
               />
             )}
@@ -329,16 +355,16 @@ function WishlistContent(props: WishlistContentProps) {
         </section>
       </Show>
 
-      {/* Reserve / Participate Modal */}
+      {/* Reserve / Participate dialog */}
       <ModalDialog
-        open={Boolean(reserveTarget())}
-        title={
-          targetIsGroup()
-            ? "Participer à plusieurs"
-            : "Réserver cette envie"
-        }
+        open={reserveOpen()}
+        dismissible={!submitting()}
+        title={targetIsGroup() ? "Rejoindre le cadeau groupé" : "Réserver cette envie"}
         subtitle={reserveTarget()?.title}
-        onClose={closeReserveModal}
+        onClose={() => {
+          setReserveOpen(false);
+          setFormError(null);
+        }}
       >
         <Show when={reserveTarget()}>
           <form class="stack" onSubmit={(e) => void handleSubmitClaim(e)}>
@@ -346,38 +372,34 @@ function WishlistContent(props: WishlistContentProps) {
               when={targetIsGroup()}
               fallback={
                 <fieldset class="field-group">
-                  <legend class="field-label">Mode de réservation</legend>
+                  <legend class="field-label">Comment veux-tu l'offrir&nbsp;?</legend>
                   <div class="mode-grid">
-                    <button
-                      type="button"
-                      class={[
-                        "mode-option",
-                        { "is-selected": reserveMode() === "solo" },
-                      ]}
-                      aria-pressed={reserveMode() === "solo" ? "true" : "false"}
-                      onClick={() => setReserveMode("solo")}
-                    >
-                      <span class="mode-option-title">En solo</span>
+                    <label class="mode-option">
+                      <input
+                        type="radio"
+                        name={modeName}
+                        value="solo"
+                        checked={reserveMode() === "solo"}
+                        onChange={() => setReserveMode("solo")}
+                      />
+                      <span class="mode-option-title">Seul·e</span>
                       <span class="mode-option-desc">
-                        Je m'en occupe seul·e, l'idée est marquée réservée.
+                        Je m'en occupe. L'envie passe en «&nbsp;déjà réservé&nbsp;».
                       </span>
-                    </button>
-                    <button
-                      type="button"
-                      class={[
-                        "mode-option",
-                        { "is-selected": reserveMode() === "group" },
-                      ]}
-                      aria-pressed={
-                        reserveMode() === "group" ? "true" : "false"
-                      }
-                      onClick={() => setReserveMode("group")}
-                    >
+                    </label>
+                    <label class="mode-option">
+                      <input
+                        type="radio"
+                        name={modeName}
+                        value="group"
+                        checked={reserveMode() === "group"}
+                        onChange={() => setReserveMode("group")}
+                      />
                       <span class="mode-option-title">À plusieurs</span>
                       <span class="mode-option-desc">
-                        D'autres proches pourront se joindre à moi.
+                        D'autres proches pourront se joindre à toi.
                       </span>
-                    </button>
+                    </label>
                   </div>
                 </fieldset>
               }
@@ -385,14 +407,10 @@ function WishlistContent(props: WishlistContentProps) {
               <div class="info-banner">
                 <UsersIcon size={16} />
                 <div>
-                  <p class="info-banner-title">Déjà engagé à plusieurs</p>
+                  <p class="info-banner-title">Cadeau groupé en cours</p>
                   <p class="info-banner-text">
-                    Participants actuels :{" "}
-                    <strong>
-                      {targetExistingClaims()
-                        .map((c) => c.guestName?.trim() || "Un proche")
-                        .join(", ")}
-                    </strong>
+                    Déjà partant·es&nbsp;:{" "}
+                    <strong>{targetExistingClaims().map(guestLabel).join(", ")}</strong>
                   </p>
                 </div>
               </div>
@@ -400,7 +418,7 @@ function WishlistContent(props: WishlistContentProps) {
 
             <div class="field">
               <label class="field-label" for={nameInputId}>
-                Prénom <span class="field-optional">(facultatif)</span>
+                Ton prénom <span class="field-optional">(facultatif)</span>
               </label>
               <input
                 id={nameInputId}
@@ -409,25 +427,29 @@ function WishlistContent(props: WishlistContentProps) {
                 maxlength={60}
                 autocomplete="given-name"
                 placeholder="Ex. Camille"
-                autofocus
+                autofocus={finePointer()}
                 value={guestName()}
                 onInput={(e) => setGuestName(e.currentTarget.value)}
               />
               <span class="field-hint">
-                Visible uniquement par les autres proches, jamais par Alexandre.
+                Seuls les autres proches le verront, jamais Alexandre.
               </span>
             </div>
 
             <div class="field">
               <label class="field-label" for={msgInputId}>
-                Petit mot <span class="field-optional">(facultatif)</span>
+                Un mot pour les autres <span class="field-optional">(facultatif)</span>
               </label>
               <textarea
                 id={msgInputId}
                 class="textarea"
                 rows={2}
                 maxlength={240}
-                placeholder="Ex. Je passe commande cette semaine, écrivez-moi si vous voulez participer !"
+                placeholder={
+                  groupChosen()
+                    ? "Ex. Je commande dimanche, dites-moi si vous participez !"
+                    : "Ex. Je le commande cette semaine."
+                }
                 value={guestMessage()}
                 onInput={(e) => setGuestMessage(e.currentTarget.value)}
               />
@@ -447,7 +469,7 @@ function WishlistContent(props: WishlistContentProps) {
                 type="button"
                 class="btn btn-secondary"
                 disabled={submitting()}
-                onClick={closeReserveModal}
+                onClick={() => setReserveOpen(false)}
               >
                 Annuler
               </button>
@@ -455,34 +477,43 @@ function WishlistContent(props: WishlistContentProps) {
                 type="submit"
                 class="btn btn-primary"
                 disabled={submitting()}
+                aria-busy={submitting() ? "true" : undefined}
               >
                 {submitting()
-                  ? "Enregistrement…"
-                  : targetIsGroup() || reserveMode() === "group"
-                    ? "Confirmer ma participation"
-                    : "Confirmer la réservation"}
+                  ? "Envoi…"
+                  : groupChosen()
+                    ? "Participer"
+                    : "Réserver"}
               </button>
             </div>
           </form>
         </Show>
       </ModalDialog>
 
-      {/* Force-release Confirm Modal */}
+      {/* Release dialog: free a reservation made elsewhere */}
       <ModalDialog
-        open={Boolean(releaseTarget())}
-        title="Libérer cette réservation ?"
+        open={releaseOpen()}
+        dismissible={!releasingId()}
+        title={
+          releaseFreesItem()
+            ? "Rendre cette envie disponible ?"
+            : "Retirer une participation ?"
+        }
         subtitle={releaseTarget()?.item.title}
         size="sm"
-        onClose={() => {
-          if (!releasingId()) setReleaseTarget(null);
-        }}
+        onClose={() => setReleaseOpen(false)}
       >
         <Show when={releaseTarget()}>
           {(target) => (
             <div class="stack">
               <p class="modal-copy">
-                Utile si tu as réservé depuis un autre appareil ou si la
-                personne a changé d'avis. L'envie redeviendra disponible.
+                Utile si tu as réservé depuis un autre appareil, ou si quelqu'un
+                a changé d'avis.{" "}
+                {target().claims.length > 1
+                  ? "Choisis la participation à retirer."
+                  : releaseFreesItem()
+                    ? "Sa réservation sera supprimée."
+                    : "Le cadeau groupé continue sans cette personne."}
               </p>
 
               <Show when={releaseError()}>
@@ -503,7 +534,7 @@ function WishlistContent(props: WishlistContentProps) {
                       class="btn btn-secondary"
                       autofocus
                       disabled={Boolean(releasingId())}
-                      onClick={() => setReleaseTarget(null)}
+                      onClick={() => setReleaseOpen(false)}
                     >
                       Garder
                     </button>
@@ -511,31 +542,29 @@ function WishlistContent(props: WishlistContentProps) {
                       type="button"
                       class="btn btn-danger"
                       disabled={Boolean(releasingId())}
+                      aria-busy={releasingId() ? "true" : undefined}
                       onClick={() =>
                         void handleForceRelease(target().claims[0].id)
                       }
                     >
-                      {releasingId() ? "Libération…" : "Libérer l'envie"}
+                      {releasingId() ? "Un instant…" : releaseFreesItem() ? "Rendre disponible" : "Retirer sa participation"}
                     </button>
                   </div>
                 }
               >
                 <div class="release-list">
-                  <For each={target().claims}>
+                  <For each={target().claims} keyed={(claim) => claim.id}>
                     {(claim) => (
                       <div class="release-row">
-                        <span class="release-who">
-                          {claim.guestName?.trim() || "Un proche"}
-                        </span>
+                        <span class="release-who">{guestLabel(claim())}</span>
                         <button
                           type="button"
-                          class="btn btn-danger btn-sm"
+                          class="btn btn-ghost btn-ghost--danger btn-sm"
                           disabled={Boolean(releasingId())}
-                          onClick={() => void handleForceRelease(claim.id)}
+                          aria-label={`Retirer la participation de ${guestLabel(claim())}`}
+                          onClick={() => void handleForceRelease(claim().id)}
                         >
-                          {releasingId() === claim.id
-                            ? "Libération…"
-                            : "Libérer"}
+                          {releasingId() === claim().id ? "Un instant…" : "Retirer"}
                         </button>
                       </div>
                     )}
@@ -547,7 +576,7 @@ function WishlistContent(props: WishlistContentProps) {
                     class="btn btn-secondary"
                     autofocus
                     disabled={Boolean(releasingId())}
-                    onClick={() => setReleaseTarget(null)}
+                    onClick={() => setReleaseOpen(false)}
                   >
                     Fermer
                   </button>
@@ -562,7 +591,7 @@ function WishlistContent(props: WishlistContentProps) {
 }
 
 const ListSkeleton = () => (
-  <div class="skeleton-wrap" aria-busy="true" aria-label="Chargement">
+  <div class="skeleton-wrap" aria-busy="true" aria-label="Chargement de la liste">
     <div class="skeleton-hero" />
     <div class="wish-grid">
       <div class="skeleton-card" />
@@ -581,11 +610,11 @@ function WishlistLoader() {
           <span class="empty-icon empty-icon--error" aria-hidden="true">
             <AlertIcon size={22} />
           </span>
-          <h2 class="empty-title">Impossible de charger la liste</h2>
+          <h2 class="empty-title">La liste n'a pas pu se charger</h2>
           <p class="empty-desc">
             {err() instanceof ApiError
               ? (err() as ApiError).message
-              : "Une erreur réseau est survenue. Réessayez dans un instant."}
+              : "Vérifie ta connexion, puis réessaie."}
           </p>
           <button
             type="button"
@@ -621,11 +650,11 @@ function OwnerLoader(props: { token: string }) {
           <span class="empty-icon empty-icon--error" aria-hidden="true">
             <AlertIcon size={22} />
           </span>
-          <h2 class="empty-title">Impossible de charger ta liste</h2>
+          <h2 class="empty-title">Ta liste n'a pas pu se charger</h2>
           <p class="empty-desc">
             {err() instanceof ApiError
               ? (err() as ApiError).message
-              : "Une erreur réseau est survenue. Réessaie dans un instant."}
+              : "Vérifie ta connexion, puis reconnecte-toi."}
           </p>
           <button
             type="button"
@@ -640,18 +669,21 @@ function OwnerLoader(props: { token: string }) {
       <Loading on="owner-items" fallback={<ListSkeleton />}>
         <div class="wishlist-view">
           <section class="hero reveal-soft">
-            <h1 class="hero-title">Ta liste d'envies</h1>
+            <h1 class="hero-title">Ta liste, sans spoiler</h1>
             <p class="hero-subtitle">
-              Telle que tes proches la voient, sans aucune réservation : pas de
-              spoil possible ici.
+              C'est ce que voient tes proches, moins les réservations. La
+              surprise reste entière.
             </p>
-            <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              onClick={() => router.navigate("/admin")}
-            >
-              Gérer ma liste
-            </button>
+            <div class="hero-actions">
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                onClick={() => router.navigate("/admin")}
+              >
+                <PencilIcon size={14} />
+                Modifier ma liste
+              </button>
+            </div>
           </section>
 
           <Show
@@ -663,16 +695,23 @@ function OwnerLoader(props: { token: string }) {
                 </span>
                 <h2 class="empty-title">Ta liste est encore vide</h2>
                 <p class="empty-desc">
-                  Ajoute tes premières envies depuis l'espace gestion.
+                  Ajoute ta première envie&nbsp;: un lien suffit.
                 </p>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  onClick={() => router.navigate("/admin")}
+                >
+                  Ajouter une envie
+                </button>
               </section>
             }
           >
-            <section class="wish-grid reveal-soft" aria-label="Mes envies">
-              <For each={dataMemo().items}>
+            <section class="wish-grid" aria-label="Mes envies">
+              <For each={dataMemo().items} keyed={(item) => item.id}>
                 {(item) => (
                   <WishCard
-                    item={item}
+                    item={item()}
                     owner
                     claims={[]}
                     myTokens={[]}
@@ -713,11 +752,11 @@ export function WishlistPage() {
             <ShieldIcon size={22} />
           </div>
           <h1 id="gate-heading" class="guard-title">
-            Qui es-tu ?
+            Qui es-tu&nbsp;?
           </h1>
           <p class="guard-desc">
-            Cette liste montre qui offre quoi. Pour garder la surprise,
-            Alexandre ne doit pas voir les réservations.
+            Cette page montre qui offre quoi. Pour garder la surprise, Alexandre
+            ne doit pas la voir.
           </p>
           <div class="guard-actions">
             <button

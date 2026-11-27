@@ -7,6 +7,8 @@ export interface ModalDialogProps {
   title: string;
   subtitle?: string;
   size?: "sm" | "md";
+  /** False while a request is in flight: Escape, backdrop and × are ignored. */
+  dismissible?: boolean;
   onClose: () => void;
   children?: JSX.Element;
 }
@@ -50,8 +52,10 @@ export function ModalDialog(props: ModalDialogProps) {
     };
   });
 
+  const dismissible = () => props.dismissible !== false;
+
   const closeDialog = () => {
-    if (dialogRef?.open) dialogRef.close();
+    if (dismissible() && dialogRef?.open) dialogRef.close();
   };
 
   return (
@@ -61,7 +65,12 @@ export function ModalDialog(props: ModalDialogProps) {
       }}
       class={["modal-dialog", { "modal-dialog--sm": props.size === "sm" }]}
       aria-labelledby={titleId}
-      {...({ closedby: "any" } as Record<string, unknown>)}
+      aria-busy={dismissible() ? undefined : "true"}
+      {...({ closedby: dismissible() ? "any" : "none" } as Record<string, unknown>)}
+      onCancel={(e) => {
+        // Browsers without closedby still fire cancel on Escape
+        if (!dismissible()) e.preventDefault();
+      }}
       onClose={() => {
         downOutside = false;
         if (dialogRef) dialogRef.returnValue = "";
@@ -71,6 +80,7 @@ export function ModalDialog(props: ModalDialogProps) {
         // Safari fallback for closedby="any" light-dismiss
         downOutside =
           !supportsClosedBy() &&
+          dismissible() &&
           e.button === 0 &&
           Boolean(dialogRef && isOutsideDialog(dialogRef, e.clientX, e.clientY));
       }}
@@ -104,6 +114,7 @@ export function ModalDialog(props: ModalDialogProps) {
           type="button"
           class="icon-btn"
           aria-label="Fermer"
+          disabled={!dismissible()}
           onClick={closeDialog}
         >
           <CloseIcon size={16} />

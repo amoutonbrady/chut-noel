@@ -36,6 +36,7 @@ import {
 } from "../components/Icons";
 import { ModalDialog } from "../components/ModalDialog";
 import { ToastContext } from "../components/ToastHost";
+import { titleHue, titleInitial } from "../components/WishCard";
 
 // `?proche` marks the guest's device so they skip the "who are you?" gate
 const PUBLIC_SHARE_URL = "https://wish.amoutonbrady.dev/?proche";
@@ -76,6 +77,17 @@ const toItemInput = (draft: ItemDraft): CreateItemInput => ({
   note: draft.note.trim() || undefined,
 });
 
+const validateDraft = (draft: ItemDraft): string | null => {
+  if (!draft.title.trim()) return "Donne un titre à ton envie.";
+  if (draft.url.trim() && !isHttpUrl(draft.url)) {
+    return "Le lien doit commencer par http:// ou https://.";
+  }
+  if (draft.imageUrl.trim() && !isHttpUrl(draft.imageUrl)) {
+    return "L'adresse de l'image doit commencer par http:// ou https://.";
+  }
+  return null;
+};
+
 // Send empty strings on PATCH so cleared optional fields are removed server-side
 const toUpdateInput = (draft: ItemDraft): CreateItemInput => ({
   title: draft.title.trim(),
@@ -106,16 +118,19 @@ export function AdminPage() {
   const [draft, setDraft] = createSignal<ItemDraft>({ ...emptyDraft(), ...added });
   const [scraping, setScraping] = createSignal(false);
   const [scrapeNotice, setScrapeNotice] = createSignal<string | null>(null);
+  const [scrapeOk, setScrapeOk] = createSignal(false);
   const [createBusy, setCreateBusy] = createSignal(false);
   const [createError, setCreateError] = createSignal<string | null>(null);
 
-  // Edit modal
+  // Edit dialog (`open` kept apart from the target so content survives the fade-out)
+  const [editOpen, setEditOpen] = createSignal(false);
   const [editTarget, setEditTarget] = createSignal<WishItem | null>(null);
   const [editDraft, setEditDraft] = createSignal<ItemDraft>(emptyDraft());
   const [editBusy, setEditBusy] = createSignal(false);
   const [editError, setEditError] = createSignal<string | null>(null);
 
-  // Delete confirm modal
+  // Delete confirm dialog
+  const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [deleteTarget, setDeleteTarget] = createSignal<WishItem | null>(null);
   const [deleteBusy, setDeleteBusy] = createSignal(false);
   const [deleteError, setDeleteError] = createSignal<string | null>(null);
@@ -150,12 +165,12 @@ export function AdminPage() {
         if (!active) return;
         if (err instanceof ApiError && err.status === 401) {
           clearOwnerToken();
-          setLoginError("Session expirée — saisis ta clé d'accès.");
+          setLoginError("Ta session a expiré. Entre à nouveau ta clé d'accès.");
         } else {
           setLoginError(
             err instanceof ApiError
               ? err.message
-              : "Impossible de joindre l'espace gestion.",
+              : "L'espace gestion ne répond pas. Vérifie ta connexion et réessaie.",
           );
         }
       })
@@ -181,15 +196,15 @@ export function AdminPage() {
       setToken(candidate);
       setItems(res.items);
       setPasswordInput("");
-      toast.show("Connecté en mode gestion.");
+      toast.show("Connecté. Tu peux modifier ta liste.");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        setLoginError("Clé d'accès invalide.");
+        setLoginError("Cette clé n'est pas la bonne. Vérifie-la et réessaie.");
       } else {
         setLoginError(
           err instanceof ApiError
             ? err.message
-            : "Connexion impossible pour le moment.",
+            : "Connexion impossible pour le moment. Réessaie dans un instant.",
         );
       }
     } finally {
@@ -203,15 +218,15 @@ export function AdminPage() {
     setItems([]);
     setPasswordInput("");
     setLoginError(null);
-    toast.show("Déconnecté.", "info");
+    toast.show("Tu es déconnecté.", "info");
   };
 
   const handleCopyShareUrl = async () => {
     const ok = await copyToClipboard(PUBLIC_SHARE_URL);
     if (ok) {
-      toast.show("Lien copié : wish.amoutonbrady.dev/?proche");
+      toast.show("Lien copié. Envoie-le à tes proches.");
     } else {
-      toast.show("Copie impossible — sélectionnez l'adresse manuellement.", "error");
+      toast.show(`Copie impossible. Partage cette adresse : ${PUBLIC_SHARE_URL}`, "error");
     }
   };
 
@@ -234,12 +249,14 @@ export function AdminPage() {
     const rawUrl = draft().url.trim();
     if (!currentToken || scraping()) return;
     if (!isHttpUrl(rawUrl)) {
-      setScrapeNotice("Saisis d'abord un lien valide commençant par https://");
+      setScrapeOk(false);
+      setScrapeNotice("Colle d'abord un lien complet, qui commence par https://");
       return;
     }
 
     setScraping(true);
     setScrapeNotice(null);
+    setScrapeOk(false);
     setCreateError(null);
 
     try {
@@ -256,21 +273,22 @@ export function AdminPage() {
         siteName: meta.siteName || prev.siteName,
         note: prev.note.trim() || meta.note || "",
       }));
+      setScrapeOk(foundAny);
       setScrapeNotice(
         foundAny
-          ? "Informations récupérées — tu peux ajuster avant d'ajouter."
-          : "Lien reconnu mais le site bloque la lecture auto : complète simplement le titre.",
+          ? "Infos récupérées. Vérifie-les avant d'ajouter."
+          : "Ce site bloque la lecture automatique. Écris simplement le titre, ou utilise le bouton « Ma liste » ci-dessus.",
       );
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         handleLogout();
-        setLoginError("Clé d'accès expirée.");
+        setLoginError("Ta session a expiré. Entre à nouveau ta clé d'accès.");
         return;
       }
       setScrapeNotice(
         err instanceof ApiError
           ? err.message
-          : "Lecture automatique indisponible pour ce lien.",
+          : "Lecture automatique indisponible pour ce lien. Remplis le titre à la main.",
       );
     } finally {
       setScraping(false);
@@ -283,16 +301,9 @@ export function AdminPage() {
     if (!currentToken || createBusy()) return;
 
     const current = draft();
-    if (!current.title.trim()) {
-      setCreateError("Le titre est requis.");
-      return;
-    }
-    if (current.url.trim() && !isHttpUrl(current.url)) {
-      setCreateError("Le lien doit commencer par http:// ou https://.");
-      return;
-    }
-    if (current.imageUrl.trim() && !isHttpUrl(current.imageUrl)) {
-      setCreateError("L'URL de l'image doit commencer par http:// ou https://.");
+    const invalid = validateDraft(current);
+    if (invalid) {
+      setCreateError(invalid);
       return;
     }
 
@@ -303,17 +314,17 @@ export function AdminPage() {
       setItems((prev) => [...prev, item]);
       setDraft(emptyDraft());
       setScrapeNotice(null);
-      toast.show("Envie ajoutée à la liste.");
+      toast.show("Envie ajoutée. Tes proches la voient déjà.");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         handleLogout();
-        setLoginError("Clé d'accès invalide ou expirée.");
+        setLoginError("Ta session a expiré. Entre à nouveau ta clé d'accès.");
         return;
       }
       setCreateError(
         err instanceof ApiError
           ? err.message
-          : "Impossible d'ajouter cette envie.",
+          : "L'envie n'a pas pu être ajoutée. Réessaie dans un instant.",
       );
     } finally {
       setCreateBusy(false);
@@ -324,6 +335,7 @@ export function AdminPage() {
     setEditTarget(item);
     setEditDraft(draftFromItem(item));
     setEditError(null);
+    setEditOpen(true);
   };
 
   const handleSaveEdit = async (e: SubmitEvent) => {
@@ -333,16 +345,9 @@ export function AdminPage() {
     if (!currentToken || !target || editBusy()) return;
 
     const current = editDraft();
-    if (!current.title.trim()) {
-      setEditError("Le titre est requis.");
-      return;
-    }
-    if (current.url.trim() && !isHttpUrl(current.url)) {
-      setEditError("Le lien doit commencer par http:// ou https://.");
-      return;
-    }
-    if (current.imageUrl.trim() && !isHttpUrl(current.imageUrl)) {
-      setEditError("L'URL de l'image doit commencer par http:// ou https://.");
+    const invalid = validateDraft(current);
+    if (invalid) {
+      setEditError(invalid);
       return;
     }
 
@@ -355,19 +360,19 @@ export function AdminPage() {
         toUpdateInput(current),
       );
       setItems((prev) => prev.map((it) => (it.id === item.id ? item : it)));
-      setEditTarget(null);
-      toast.show("Envie mise à jour.");
+      setEditOpen(false);
+      toast.show("Modifications enregistrées.");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        setEditTarget(null);
+        setEditOpen(false);
         handleLogout();
-        setLoginError("Clé d'accès invalide ou expirée.");
+        setLoginError("Ta session a expiré. Entre à nouveau ta clé d'accès.");
         return;
       }
       setEditError(
         err instanceof ApiError
           ? err.message
-          : "Impossible d'enregistrer les modifications.",
+          : "Les modifications n'ont pas pu être enregistrées. Réessaie dans un instant.",
       );
     } finally {
       setEditBusy(false);
@@ -384,19 +389,19 @@ export function AdminPage() {
     try {
       await deleteAdminItem(currentToken, target.id);
       setItems((prev) => prev.filter((it) => it.id !== target.id));
-      setDeleteTarget(null);
+      setDeleteOpen(false);
       toast.show("Envie supprimée.");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        setDeleteTarget(null);
+        setDeleteOpen(false);
         handleLogout();
-        setLoginError("Clé d'accès invalide ou expirée.");
+        setLoginError("Ta session a expiré. Entre à nouveau ta clé d'accès.");
         return;
       }
       setDeleteError(
         err instanceof ApiError
           ? err.message
-          : "Impossible de supprimer cette envie.",
+          : "L'envie n'a pas pu être supprimée. Réessaie dans un instant.",
       );
     } finally {
       setDeleteBusy(false);
@@ -424,8 +429,8 @@ export function AdminPage() {
               Espace gestion
             </h1>
             <p class="guard-desc">
-              Saisis ta clé d'accès pour éditer tes envies sans jamais voir les
-              réservations.
+              Entre ta clé d'accès pour modifier ta liste. Les réservations
+              restent cachées ici aussi.
             </p>
 
             <form class="stack auth-form" onSubmit={(e) => void handleLogin(e)}>
@@ -438,7 +443,6 @@ export function AdminPage() {
                   type="password"
                   class="input"
                   autocomplete="current-password"
-                  placeholder="••••••••"
                   autofocus
                   required
                   value={passwordInput()}
@@ -459,6 +463,7 @@ export function AdminPage() {
                 type="submit"
                 class="btn btn-primary"
                 disabled={loginBusy() || !passwordInput().trim()}
+                aria-busy={loginBusy() ? "true" : undefined}
               >
                 {loginBusy() ? "Vérification…" : "Se connecter"}
               </button>
@@ -469,16 +474,10 @@ export function AdminPage() {
         <div class="admin-view reveal-soft">
           <section class="admin-header">
             <div>
-              <div class="admin-title-row">
-                <h1 class="hero-title">Gérer mes envies</h1>
-                <span class="badge badge--neutral">
-                  {items().length}{" "}
-                  {items().length > 1 ? "envies" : "envie"}
-                </span>
-              </div>
+              <h1 class="hero-title">Gérer mes envies</h1>
               <p class="hero-subtitle">
-                Mode sans spoiler — les réservations des proches restent
-                masquées ici.
+                Ajoute, modifie ou retire tes idées. Les réservations de tes
+                proches n'apparaissent jamais ici.
               </p>
             </div>
 
@@ -489,7 +488,7 @@ export function AdminPage() {
                 onClick={() => void handleCopyShareUrl()}
               >
                 <CopyIcon size={14} />
-                <span>Copier le lien</span>
+                Copier le lien de partage
               </button>
               <button
                 type="button"
@@ -497,7 +496,7 @@ export function AdminPage() {
                 onClick={handleLogout}
               >
                 <LogOutIcon size={14} />
-                <span>Déconnexion</span>
+                Se déconnecter
               </button>
             </div>
           </section>
@@ -506,20 +505,32 @@ export function AdminPage() {
             <h2 id="add-wish-heading" class="panel-title">
               Ajouter une envie
             </h2>
-            <p class="field-hint">
-              Astuce : glisse{" "}
+
+            <div class="callout">
+              <div>
+                <p class="callout-title">Ajoute depuis n'importe quel site</p>
+                <p class="callout-text">
+                  Glisse ce bouton dans ta barre de favoris. Sur une page
+                  produit, clique dessus&nbsp;: ce formulaire se remplit tout seul.
+                </p>
+              </div>
+              {/* Must stay a draggable javascript: link, not a button */}
               <a
-                class="btn btn-secondary btn-sm"
+                class="btn btn-secondary btn-sm bookmarklet"
                 href={bookmarkletHref(window.location.origin)}
                 title="Glisse ce bouton dans ta barre de favoris"
-                onClick={(e) => e.preventDefault()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  toast.show(
+                    "Glisse ce bouton vers ta barre de favoris plutôt que de cliquer dessus.",
+                    "info",
+                  );
+                }}
               >
                 <PlusIcon size={14} />
-                <span>Ma liste</span>
-              </a>{" "}
-              dans ta barre de favoris, puis clique dessus sur une page produit
-              (Amazon, Decathlon…) : ce formulaire se remplit tout seul.
-            </p>
+                Ma liste
+              </a>
+            </div>
 
             <form class="stack" onSubmit={(e) => void handleCreateItem(e)}>
               <div class="field">
@@ -531,6 +542,7 @@ export function AdminPage() {
                     id={urlId}
                     type="url"
                     class="input"
+                    inputmode="url"
                     placeholder="https://…"
                     value={draft().url}
                     onInput={(e) => {
@@ -542,21 +554,30 @@ export function AdminPage() {
                     type="button"
                     class="btn btn-secondary"
                     disabled={scraping() || !draft().url.trim()}
+                    aria-busy={scraping() ? "true" : undefined}
+                    title="Récupérer le titre, le prix et l'image depuis le lien"
                     onClick={() => void handleScrape()}
                   >
                     <SparkleLinkIcon size={14} />
-                    <span>{scraping() ? "Lecture…" : "Remplir"}</span>
+                    {scraping() ? "Lecture…" : "Remplir"}
                   </button>
                 </div>
                 <Show when={scrapeNotice()}>
-                  {(notice) => <span class="field-hint">{notice()}</span>}
+                  {(notice) => (
+                    <span
+                      class={["field-hint", { "field-hint--success": scrapeOk() }]}
+                      role="status"
+                    >
+                      {notice()}
+                    </span>
+                  )}
                 </Show>
               </div>
 
               <div class="form-row">
                 <div class="field">
                   <label class="field-label" for={titleId}>
-                    Titre *
+                    Titre
                   </label>
                   <input
                     id={titleId}
@@ -572,9 +593,9 @@ export function AdminPage() {
                   />
                 </div>
 
-                <div class="field field--price">
+                <div class="field">
                   <label class="field-label" for={priceId}>
-                    Prix indicatif
+                    Prix <span class="field-optional">(facultatif)</span>
                   </label>
                   <input
                     id={priceId}
@@ -592,14 +613,14 @@ export function AdminPage() {
 
               <div class="field">
                 <label class="field-label" for={noteId}>
-                  Note <span class="field-optional">(taille, couleur, préférence…)</span>
+                  Précisions <span class="field-optional">(facultatif)</span>
                 </label>
                 <textarea
                   id={noteId}
                   class="textarea"
                   rows={2}
                   maxlength={320}
-                  placeholder="Ex. Version noir mat, prise européenne"
+                  placeholder="Ex. Taille M, coloris noir mat"
                   value={draft().note}
                   onInput={(e) =>
                     updateDraftField("note", e.currentTarget.value)
@@ -609,12 +630,13 @@ export function AdminPage() {
 
               <div class="field">
                 <label class="field-label" for={imageId}>
-                  Image (URL) <span class="field-optional">(facultatif)</span>
+                  Adresse de l'image <span class="field-optional">(facultatif)</span>
                 </label>
                 <input
                   id={imageId}
                   type="url"
                   class="input"
+                  inputmode="url"
                   placeholder="https://…/photo.jpg"
                   value={draft().imageUrl}
                   onInput={(e) =>
@@ -637,9 +659,10 @@ export function AdminPage() {
                   type="submit"
                   class="btn btn-primary"
                   disabled={createBusy() || !draft().title.trim()}
+                  aria-busy={createBusy() ? "true" : undefined}
                 >
                   <PlusIcon size={15} />
-                  <span>{createBusy() ? "Ajout…" : "Ajouter à la liste"}</span>
+                  {createBusy() ? "Ajout…" : "Ajouter à la liste"}
                 </button>
               </div>
             </form>
@@ -647,7 +670,8 @@ export function AdminPage() {
 
           <section class="admin-list-section" aria-labelledby="wishes-list-heading">
             <h2 id="wishes-list-heading" class="section-heading">
-              Envies enregistrées
+              Dans ta liste
+              <span class="badge badge--neutral">{items().length}</span>
             </h2>
 
             <Show
@@ -657,9 +681,9 @@ export function AdminPage() {
                   <span class="empty-icon" aria-hidden="true">
                     <GiftIcon size={22} />
                   </span>
-                  <h3 class="empty-title">Aucune envie pour le moment</h3>
+                  <h3 class="empty-title">Ta liste est vide</h3>
                   <p class="empty-desc">
-                    Colle un lien ci-dessus ou saisis directement ta première
+                    Colle un lien ci-dessus, ou écris directement ta première
                     idée.
                   </p>
                 </div>
@@ -676,8 +700,13 @@ export function AdminPage() {
                           <Show
                             when={item.imageUrl}
                             fallback={
-                              <span class="admin-item-initial">
-                                {(item.title.trim()[0] || "A").toUpperCase()}
+                              <span
+                                class="wish-placeholder"
+                                style={{ "--hue": String(titleHue(item.title)) }}
+                              >
+                                <span class="admin-item-initial">
+                                  {titleInitial(item.title)}
+                                </span>
                               </span>
                             }
                           >
@@ -694,29 +723,28 @@ export function AdminPage() {
                         </div>
 
                         <div class="admin-item-content">
-                          <div class="admin-item-top">
-                            <h3 class="admin-item-title">
-                              <Show
-                                when={item.url}
-                                fallback={<span>{item.title}</span>}
-                              >
-                                {(href) => (
-                                  <a
-                                    href={href()}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    class="wish-title-link"
-                                  >
-                                    <span>{item.title}</span>
-                                    <ExternalLinkIcon
-                                      size={13}
-                                      class="wish-ext-icon"
-                                    />
-                                  </a>
-                                )}
-                              </Show>
-                            </h3>
-                          </div>
+                          <h3 class="admin-item-title">
+                            <Show
+                              when={item.url}
+                              fallback={<span>{item.title}</span>}
+                            >
+                              {(href) => (
+                                <a
+                                  href={href()}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  class="wish-title-link"
+                                >
+                                  {item.title}
+                                  <ExternalLinkIcon
+                                    size={13}
+                                    class="wish-ext-icon"
+                                  />
+                                  <span class="sr-only"> (nouvel onglet)</span>
+                                </a>
+                              )}
+                            </Show>
+                          </h3>
 
                           <Show when={item.priceHint || domain()}>
                             <div class="wish-meta">
@@ -724,11 +752,6 @@ export function AdminPage() {
                                 {(price) => (
                                   <span class="wish-price">{price()}</span>
                                 )}
-                              </Show>
-                              <Show when={item.priceHint && domain()}>
-                                <span class="meta-dot" aria-hidden="true">
-                                  ·
-                                </span>
                               </Show>
                               <Show when={domain()}>
                                 {(host) => (
@@ -747,23 +770,24 @@ export function AdminPage() {
                           <button
                             type="button"
                             class="btn btn-ghost btn-sm"
-                            aria-label={`Modifier ${item.title}`}
+                            aria-label={`Modifier « ${item.title} »`}
                             onClick={() => openEditModal(item)}
                           >
                             <PencilIcon size={14} />
-                            <span>Modifier</span>
+                            Modifier
                           </button>
                           <button
                             type="button"
                             class="btn btn-ghost btn-sm btn-ghost--danger"
-                            aria-label={`Supprimer ${item.title}`}
+                            aria-label={`Supprimer « ${item.title} »`}
                             onClick={() => {
                               setDeleteError(null);
                               setDeleteTarget(item);
+                              setDeleteOpen(true);
                             }}
                           >
                             <TrashIcon size={14} />
-                            <span>Supprimer</span>
+                            Supprimer
                           </button>
                         </div>
                       </li>
@@ -774,19 +798,19 @@ export function AdminPage() {
             </Show>
           </section>
 
-          {/* Edit Modal */}
+          {/* Edit dialog */}
           <ModalDialog
-            open={Boolean(editTarget())}
+            open={editOpen()}
+            dismissible={!editBusy()}
             title="Modifier l'envie"
-            onClose={() => {
-              if (!editBusy()) setEditTarget(null);
-            }}
+            subtitle={editTarget()?.title}
+            onClose={() => setEditOpen(false)}
           >
             <Show when={editTarget()}>
               <form class="stack" onSubmit={(e) => void handleSaveEdit(e)}>
                 <div class="field">
                   <label class="field-label" for={editTitleId}>
-                    Titre *
+                    Titre
                   </label>
                   <input
                     id={editTitleId}
@@ -805,12 +829,13 @@ export function AdminPage() {
                 <div class="form-row">
                   <div class="field">
                     <label class="field-label" for={editUrlId}>
-                      Lien
+                      Lien du produit
                     </label>
                     <input
                       id={editUrlId}
                       type="url"
                       class="input"
+                      inputmode="url"
                       placeholder="https://…"
                       value={editDraft().url}
                       onInput={(e) =>
@@ -818,9 +843,9 @@ export function AdminPage() {
                       }
                     />
                   </div>
-                  <div class="field field--price">
+                  <div class="field">
                     <label class="field-label" for={editPriceId}>
-                      Prix indicatif
+                      Prix
                     </label>
                     <input
                       id={editPriceId}
@@ -836,24 +861,8 @@ export function AdminPage() {
                 </div>
 
                 <div class="field">
-                  <label class="field-label" for={editImageId}>
-                    Image (URL)
-                  </label>
-                  <input
-                    id={editImageId}
-                    type="url"
-                    class="input"
-                    placeholder="https://…"
-                    value={editDraft().imageUrl}
-                    onInput={(e) =>
-                      updateEditField("imageUrl", e.currentTarget.value)
-                    }
-                  />
-                </div>
-
-                <div class="field">
                   <label class="field-label" for={editNoteId}>
-                    Note
+                    Précisions
                   </label>
                   <textarea
                     id={editNoteId}
@@ -863,6 +872,23 @@ export function AdminPage() {
                     value={editDraft().note}
                     onInput={(e) =>
                       updateEditField("note", e.currentTarget.value)
+                    }
+                  />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for={editImageId}>
+                    Adresse de l'image
+                  </label>
+                  <input
+                    id={editImageId}
+                    type="url"
+                    class="input"
+                    inputmode="url"
+                    placeholder="https://…"
+                    value={editDraft().imageUrl}
+                    onInput={(e) =>
+                      updateEditField("imageUrl", e.currentTarget.value)
                     }
                   />
                 </div>
@@ -881,7 +907,7 @@ export function AdminPage() {
                     type="button"
                     class="btn btn-secondary"
                     disabled={editBusy()}
-                    onClick={() => setEditTarget(null)}
+                    onClick={() => setEditOpen(false)}
                   >
                     Annuler
                   </button>
@@ -889,6 +915,7 @@ export function AdminPage() {
                     type="submit"
                     class="btn btn-primary"
                     disabled={editBusy() || !editDraft().title.trim()}
+                    aria-busy={editBusy() ? "true" : undefined}
                   >
                     {editBusy() ? "Enregistrement…" : "Enregistrer"}
                   </button>
@@ -897,21 +924,20 @@ export function AdminPage() {
             </Show>
           </ModalDialog>
 
-          {/* Delete Confirm Modal */}
+          {/* Delete confirm dialog */}
           <ModalDialog
-            open={Boolean(deleteTarget())}
-            title="Supprimer cette envie ?"
+            open={deleteOpen()}
+            dismissible={!deleteBusy()}
+            title="Supprimer cette envie ?"
             subtitle={deleteTarget()?.title}
             size="sm"
-            onClose={() => {
-              if (!deleteBusy()) setDeleteTarget(null);
-            }}
+            onClose={() => setDeleteOpen(false)}
           >
             <Show when={deleteTarget()}>
               <div class="stack">
                 <p class="modal-copy">
-                  Cette idée sera retirée de ta liste publique. Cette action ne
-                  peut pas être annulée.
+                  Elle disparaîtra de la liste de tes proches. Tu ne pourras pas
+                  la récupérer.
                 </p>
 
                 <Show when={deleteError()}>
@@ -929,14 +955,15 @@ export function AdminPage() {
                     class="btn btn-secondary"
                     autofocus
                     disabled={deleteBusy()}
-                    onClick={() => setDeleteTarget(null)}
+                    onClick={() => setDeleteOpen(false)}
                   >
-                    Annuler
+                    Garder
                   </button>
                   <button
                     type="button"
                     class="btn btn-danger"
                     disabled={deleteBusy()}
+                    aria-busy={deleteBusy() ? "true" : undefined}
                     onClick={() => void handleConfirmDelete()}
                   >
                     {deleteBusy() ? "Suppression…" : "Supprimer"}

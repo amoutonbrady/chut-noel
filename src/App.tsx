@@ -82,7 +82,8 @@ function AppShell() {
               </span>
               <h1 class="empty-title">Page introuvable</h1>
               <p class="empty-desc">
-                Cette adresse n'existe pas sur la liste d'envies d'Alexandre.
+                Cette adresse ne mène nulle part. La liste t'attend juste à
+                côté.
               </p>
               <a
                 href="/"
@@ -97,7 +98,7 @@ function AppShell() {
       </main>
 
       <footer class="site-footer">
-        <p>Liste personnelle d'Alexandre · wish.amoutonbrady.dev</p>
+        <p>Chut&nbsp;! Les réservations restent invisibles pour Alexandre.</p>
       </footer>
     </div>
   );
