@@ -4,7 +4,7 @@ import { MoonIcon, SunIcon } from "./Icons";
 type Theme = "light" | "dark";
 
 const STORAGE_KEY = "wish:theme";
-const META_COLORS: Record<Theme, string> = { light: "#f8f9fb", dark: "#0c0f13" };
+const META_COLORS: Record<Theme, string> = { light: "#f6f5f0", dark: "#0e1513" };
 
 // index.html sets the initial value before first paint; this keeps it in sync
 const currentTheme = (): Theme =>
@@ -27,6 +27,7 @@ const savedTheme = (): string | null => {
 
 export function ThemeToggle() {
   const [theme, setTheme] = createSignal<Theme>(currentTheme());
+  let transitionSeq = 0;
 
   // Follow the system setting until the user picks a theme explicitly
   onSettled(() => {
@@ -41,21 +42,69 @@ export function ThemeToggle() {
     return () => query.removeEventListener("change", onChange);
   });
 
-  const toggle = () => {
+  const toggle = (e: MouseEvent) => {
     const next: Theme = theme() === "dark" ? "light" : "dark";
     try {
       localStorage.setItem(STORAGE_KEY, next);
     } catch {
       // Private browsing: the choice lasts for this page only
     }
+
     const swap = () => {
       applyTheme(next);
       setTheme(next);
     };
-    // Cross-fade the whole page instead of snapping every color at once
+
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!reduce && document.startViewTransition) {
-      document.startViewTransition(swap);
+    if (!reduce && typeof document.startViewTransition === "function") {
+      const btn = e.currentTarget as HTMLButtonElement;
+      const rect = btn.getBoundingClientRect();
+      const x = Math.round(rect.left + rect.width / 2);
+      const y = Math.round(rect.top + rect.height / 2);
+      const maxRadius =
+        Math.ceil(
+          Math.hypot(
+            Math.max(x, window.innerWidth - x),
+            Math.max(y, window.innerHeight - y),
+          ),
+        ) + 24;
+
+      const seq = ++transitionSeq;
+      const root = document.documentElement;
+      root.dataset.themeTransition = "reveal";
+
+      const transition = document.startViewTransition(async () => {
+        swap();
+        // Wait a microtask so Solid flushes the updated Sun/Moon icon before capture
+        await Promise.resolve();
+      });
+
+      void transition.ready
+        .then(() => {
+          document.documentElement.animate(
+            {
+              clipPath: [
+                `circle(0px at ${x}px ${y}px)`,
+                `circle(${maxRadius}px at ${x}px ${y}px)`,
+              ],
+            },
+            {
+              duration: 500,
+              easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+              fill: "both",
+              pseudoElement: "::view-transition-new(root)",
+            },
+          );
+        })
+        .catch(() => {
+          // Transition skipped or interrupted by another toggle
+        });
+
+      void transition.finished.finally(() => {
+        if (transitionSeq === seq) {
+          delete root.dataset.themeTransition;
+        }
+      });
     } else {
       swap();
     }

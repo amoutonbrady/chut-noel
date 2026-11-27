@@ -24,6 +24,7 @@ import {
 import { bookmarkletHref, readAddParam } from "../lib/bookmarklet";
 import {
   AlertIcon,
+  CheckIcon,
   CopyIcon,
   ExternalLinkIcon,
   GiftIcon,
@@ -31,12 +32,17 @@ import {
   LogOutIcon,
   PencilIcon,
   PlusIcon,
+  RibbonBowIcon,
   SparkleLinkIcon,
   TrashIcon,
 } from "../components/Icons";
 import { ModalDialog } from "../components/ModalDialog";
 import { ToastContext } from "../components/ToastHost";
-import { titleHue, titleInitial } from "../components/WishCard";
+import {
+  titleHue,
+  titleInitial,
+  titlePattern,
+} from "../components/WishCard";
 
 // `?proche` marks the guest's device so they skip the "who are you?" gate
 const PUBLIC_SHARE_URL = "https://wish.amoutonbrady.dev/?proche";
@@ -106,6 +112,8 @@ export function AdminPage() {
   const [checkingSession, setCheckingSession] = createSignal(
     Boolean(getOwnerToken()),
   );
+  const [copiedShare, setCopiedShare] = createSignal(false);
+  let copyTimer: number | undefined;
 
   // Login form
   const [passwordInput, setPasswordInput] = createSignal("");
@@ -116,6 +124,7 @@ export function AdminPage() {
   const added = readAddParam(window.location.search);
   if (added) window.history.replaceState(null, "", "/admin");
   const [draft, setDraft] = createSignal<ItemDraft>({ ...emptyDraft(), ...added });
+  const [previewImgFailed, setPreviewImgFailed] = createSignal(false);
   const [scraping, setScraping] = createSignal(false);
   const [scrapeNotice, setScrapeNotice] = createSignal<string | null>(null);
   const [scrapeOk, setScrapeOk] = createSignal(false);
@@ -180,6 +189,7 @@ export function AdminPage() {
 
     return () => {
       active = false;
+      window.clearTimeout(copyTimer);
     };
   });
 
@@ -224,9 +234,15 @@ export function AdminPage() {
   const handleCopyShareUrl = async () => {
     const ok = await copyToClipboard(PUBLIC_SHARE_URL);
     if (ok) {
+      setCopiedShare(true);
+      window.clearTimeout(copyTimer);
+      copyTimer = window.setTimeout(() => setCopiedShare(false), 2200);
       toast.show("Lien copié. Envoie-le à tes proches.");
     } else {
-      toast.show(`Copie impossible. Partage cette adresse : ${PUBLIC_SHARE_URL}`, "error");
+      toast.show(
+        `Copie impossible. Partage cette adresse\u00A0: ${PUBLIC_SHARE_URL}`,
+        "error",
+      );
     }
   };
 
@@ -234,6 +250,7 @@ export function AdminPage() {
     key: K,
     value: ItemDraft[K],
   ) => {
+    if (key === "imageUrl") setPreviewImgFailed(false);
     setDraft((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -264,6 +281,7 @@ export function AdminPage() {
       const foundAny = Boolean(
         meta.title || meta.imageUrl || meta.priceHint || meta.note,
       );
+      setPreviewImgFailed(false);
       setDraft((prev) => ({
         ...prev,
         url: meta.url || prev.url,
@@ -277,7 +295,7 @@ export function AdminPage() {
       setScrapeNotice(
         foundAny
           ? "Infos récupérées. Vérifie-les avant d'ajouter."
-          : "Ce site bloque la lecture automatique. Écris simplement le titre, ou utilise le bouton « Ma liste » ci-dessus.",
+          : "Ce site bloque la lecture automatique. Écris simplement le titre, ou utilise le bouton «\u00A0Ma liste\u00A0» ci-dessus.",
       );
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -313,6 +331,7 @@ export function AdminPage() {
       const { item } = await createAdminItem(currentToken, toItemInput(current));
       setItems((prev) => [...prev, item]);
       setDraft(emptyDraft());
+      setPreviewImgFailed(false);
       setScrapeNotice(null);
       toast.show("Envie ajoutée. Tes proches la voient déjà.");
     } catch (err) {
@@ -408,6 +427,14 @@ export function AdminPage() {
     }
   };
 
+  const previewTitle = () => draft().title.trim() || "Nouvelle envie";
+  const previewDomain = () =>
+    draft().siteName.trim() || extractDomain(draft().url.trim());
+  const previewImageOk = () =>
+    Boolean(draft().imageUrl.trim()) &&
+    isHttpUrl(draft().imageUrl.trim()) &&
+    !previewImgFailed();
+
   return (
     <Show
       when={!checkingSession()}
@@ -421,14 +448,14 @@ export function AdminPage() {
       <Show
         when={token()}
         fallback={
-          <section class="auth-card reveal-soft" aria-labelledby="admin-auth-title">
-            <div class="guard-icon" aria-hidden="true">
-              <LockIcon size={20} />
+          <section class="auth-stage reveal-soft" aria-labelledby="admin-auth-title">
+            <div class="auth-seal" aria-hidden="true">
+              <LockIcon size={22} />
             </div>
-            <h1 id="admin-auth-title" class="guard-title">
+            <h1 id="admin-auth-title" class="gate-title">
               Espace gestion
             </h1>
-            <p class="guard-desc">
+            <p class="gate-desc">
               Entre ta clé d'accès pour modifier ta liste. Les réservations
               restent cachées ici aussi.
             </p>
@@ -472,8 +499,8 @@ export function AdminPage() {
         }
       >
         <div class="admin-view reveal-soft">
-          <section class="admin-header">
-            <div>
+          <section class="masthead">
+            <div class="masthead-copy">
               <h1 class="hero-title">Gérer mes envies</h1>
               <p class="hero-subtitle">
                 Ajoute, modifie ou retire tes idées. Les réservations de tes
@@ -484,11 +511,15 @@ export function AdminPage() {
             <div class="admin-toolbar-actions">
               <button
                 type="button"
-                class="btn btn-secondary btn-sm"
+                class={["btn btn-secondary btn-sm", { "is-copied": copiedShare() }]}
                 onClick={() => void handleCopyShareUrl()}
               >
-                <CopyIcon size={14} />
-                Copier le lien de partage
+                <Show when={copiedShare()} fallback={<CopyIcon size={14} />}>
+                  <CheckIcon size={14} class="check-draw" />
+                </Show>
+                <span>
+                  {copiedShare() ? "Lien copié" : "Copier le lien de partage"}
+                </span>
               </button>
               <button
                 type="button"
@@ -496,15 +527,17 @@ export function AdminPage() {
                 onClick={handleLogout}
               >
                 <LogOutIcon size={14} />
-                Se déconnecter
+                <span>Se déconnecter</span>
               </button>
             </div>
           </section>
 
           <section class="panel" aria-labelledby="add-wish-heading">
-            <h2 id="add-wish-heading" class="panel-title">
-              Ajouter une envie
-            </h2>
+            <div class="panel-head">
+              <h2 id="add-wish-heading" class="panel-title">
+                Ajouter une envie
+              </h2>
+            </div>
 
             <div class="callout">
               <div>
@@ -527,151 +560,210 @@ export function AdminPage() {
                   );
                 }}
               >
-                <PlusIcon size={14} />
-                Ma liste
+                <RibbonBowIcon size={14} />
+                <span>Ma liste</span>
               </a>
             </div>
 
-            <form class="stack" onSubmit={(e) => void handleCreateItem(e)}>
-              <div class="field">
-                <label class="field-label" for={urlId}>
-                  Lien du produit <span class="field-optional">(facultatif)</span>
-                </label>
-                <div class="input-with-action">
+            <div class="composer-grid">
+              <form class="stack" onSubmit={(e) => void handleCreateItem(e)}>
+                <div class="field">
+                  <label class="field-label" for={urlId}>
+                    Lien du produit <span class="field-optional">(facultatif)</span>
+                  </label>
+                  <div class="input-with-action">
+                    <input
+                      id={urlId}
+                      type="url"
+                      class="input"
+                      inputmode="url"
+                      placeholder="https://…"
+                      value={draft().url}
+                      onInput={(e) => {
+                        updateDraftField("url", e.currentTarget.value);
+                        if (scrapeNotice()) setScrapeNotice(null);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-secondary"
+                      disabled={scraping() || !draft().url.trim()}
+                      aria-busy={scraping() ? "true" : undefined}
+                      title="Récupérer le titre, le prix et l'image depuis le lien"
+                      onClick={() => void handleScrape()}
+                    >
+                      <SparkleLinkIcon size={14} />
+                      <span>{scraping() ? "Lecture…" : "Remplir"}</span>
+                    </button>
+                  </div>
+                  <Show when={scrapeNotice()}>
+                    {(notice) => (
+                      <span
+                        class={["field-hint", { "field-hint--success": scrapeOk() }]}
+                        role="status"
+                      >
+                        {notice()}
+                      </span>
+                    )}
+                  </Show>
+                </div>
+
+                <div class="form-row">
+                  <div class="field">
+                    <label class="field-label" for={titleId}>
+                      Titre
+                    </label>
+                    <input
+                      id={titleId}
+                      type="text"
+                      class="input"
+                      required
+                      maxlength={140}
+                      placeholder="Ex. Bouilloire col de cygne Fellow"
+                      value={draft().title}
+                      onInput={(e) =>
+                        updateDraftField("title", e.currentTarget.value)
+                      }
+                    />
+                  </div>
+
+                  <div class="field">
+                    <label class="field-label" for={priceId}>
+                      Prix <span class="field-optional">(facultatif)</span>
+                    </label>
+                    <input
+                      id={priceId}
+                      type="text"
+                      class="input"
+                      maxlength={40}
+                      placeholder="Ex. 120 €"
+                      value={draft().priceHint}
+                      onInput={(e) =>
+                        updateDraftField("priceHint", e.currentTarget.value)
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for={noteId}>
+                    Précisions <span class="field-optional">(facultatif)</span>
+                  </label>
+                  <textarea
+                    id={noteId}
+                    class="textarea"
+                    rows={2}
+                    maxlength={320}
+                    placeholder="Ex. Taille M, coloris noir mat"
+                    value={draft().note}
+                    onInput={(e) =>
+                      updateDraftField("note", e.currentTarget.value)
+                    }
+                  />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for={imageId}>
+                    Adresse de l'image <span class="field-optional">(facultatif)</span>
+                  </label>
                   <input
-                    id={urlId}
+                    id={imageId}
                     type="url"
                     class="input"
                     inputmode="url"
-                    placeholder="https://…"
-                    value={draft().url}
-                    onInput={(e) => {
-                      updateDraftField("url", e.currentTarget.value);
-                      if (scrapeNotice()) setScrapeNotice(null);
-                    }}
+                    placeholder="https://…/photo.jpg"
+                    value={draft().imageUrl}
+                    onInput={(e) =>
+                      updateDraftField("imageUrl", e.currentTarget.value)
+                    }
                   />
-                  <button
-                    type="button"
-                    class="btn btn-secondary"
-                    disabled={scraping() || !draft().url.trim()}
-                    aria-busy={scraping() ? "true" : undefined}
-                    title="Récupérer le titre, le prix et l'image depuis le lien"
-                    onClick={() => void handleScrape()}
-                  >
-                    <SparkleLinkIcon size={14} />
-                    {scraping() ? "Lecture…" : "Remplir"}
-                  </button>
                 </div>
-                <Show when={scrapeNotice()}>
-                  {(notice) => (
-                    <span
-                      class={["field-hint", { "field-hint--success": scrapeOk() }]}
-                      role="status"
-                    >
-                      {notice()}
-                    </span>
+
+                <Show when={createError()}>
+                  {(err) => (
+                    <div class="form-alert" role="alert">
+                      <AlertIcon size={15} />
+                      <span>{err()}</span>
+                    </div>
                   )}
                 </Show>
-              </div>
 
-              <div class="form-row">
-                <div class="field">
-                  <label class="field-label" for={titleId}>
-                    Titre
-                  </label>
-                  <input
-                    id={titleId}
-                    type="text"
-                    class="input"
-                    required
-                    maxlength={140}
-                    placeholder="Ex. Bouilloire col de cygne Fellow"
-                    value={draft().title}
-                    onInput={(e) =>
-                      updateDraftField("title", e.currentTarget.value)
-                    }
-                  />
+                <div class="form-footer">
+                  <button
+                    type="submit"
+                    class="btn btn-primary"
+                    disabled={createBusy() || !draft().title.trim()}
+                    aria-busy={createBusy() ? "true" : undefined}
+                  >
+                    <PlusIcon size={15} />
+                    <span>{createBusy() ? "Ajout…" : "Ajouter à la liste"}</span>
+                  </button>
                 </div>
+              </form>
 
-                <div class="field">
-                  <label class="field-label" for={priceId}>
-                    Prix <span class="field-optional">(facultatif)</span>
-                  </label>
-                  <input
-                    id={priceId}
-                    type="text"
-                    class="input"
-                    maxlength={40}
-                    placeholder="Ex. 120 €"
-                    value={draft().priceHint}
-                    onInput={(e) =>
-                      updateDraftField("priceHint", e.currentTarget.value)
-                    }
-                  />
-                </div>
-              </div>
-
-              <div class="field">
-                <label class="field-label" for={noteId}>
-                  Précisions <span class="field-optional">(facultatif)</span>
-                </label>
-                <textarea
-                  id={noteId}
-                  class="textarea"
-                  rows={2}
-                  maxlength={320}
-                  placeholder="Ex. Taille M, coloris noir mat"
-                  value={draft().note}
-                  onInput={(e) =>
-                    updateDraftField("note", e.currentTarget.value)
-                  }
-                />
-              </div>
-
-              <div class="field">
-                <label class="field-label" for={imageId}>
-                  Adresse de l'image <span class="field-optional">(facultatif)</span>
-                </label>
-                <input
-                  id={imageId}
-                  type="url"
-                  class="input"
-                  inputmode="url"
-                  placeholder="https://…/photo.jpg"
-                  value={draft().imageUrl}
-                  onInput={(e) =>
-                    updateDraftField("imageUrl", e.currentTarget.value)
-                  }
-                />
-              </div>
-
-              <Show when={createError()}>
-                {(err) => (
-                  <div class="form-alert" role="alert">
-                    <AlertIcon size={15} />
-                    <span>{err()}</span>
+              <aside class="live-preview" aria-label="Aperçu de la carte">
+                <p class="live-preview-label">Aperçu pour tes proches</p>
+                <div class="live-preview-card">
+                  <div class="live-preview-media">
+                    <Show
+                      when={previewImageOk()}
+                      fallback={
+                        <div
+                          class="wish-placeholder"
+                          data-pattern={titlePattern(previewTitle())}
+                          style={{ "--hue": String(titleHue(previewTitle())) }}
+                          aria-hidden="true"
+                        >
+                          <div class="wish-tag">
+                            <span class="wish-tag-bow">
+                              <RibbonBowIcon size={13} />
+                            </span>
+                            <span class="wish-monogram">
+                              {titleInitial(previewTitle())}
+                            </span>
+                          </div>
+                        </div>
+                      }
+                    >
+                      <img
+                        src={draft().imageUrl.trim()}
+                        alt=""
+                        class="wish-img"
+                        referrerpolicy="no-referrer"
+                        onError={() => setPreviewImgFailed(true)}
+                      />
+                    </Show>
                   </div>
-                )}
-              </Show>
-
-              <div class="form-footer">
-                <button
-                  type="submit"
-                  class="btn btn-primary"
-                  disabled={createBusy() || !draft().title.trim()}
-                  aria-busy={createBusy() ? "true" : undefined}
-                >
-                  <PlusIcon size={15} />
-                  {createBusy() ? "Ajout…" : "Ajouter à la liste"}
-                </button>
-              </div>
-            </form>
+                  <div class="live-preview-body">
+                    <Show when={previewDomain()}>
+                      {(host) => <span class="wish-domain">{host()}</span>}
+                    </Show>
+                    <p
+                      class={[
+                        "live-preview-title",
+                        { "is-placeholder": !draft().title.trim() },
+                      ]}
+                    >
+                      {previewTitle()}
+                    </p>
+                    <Show when={draft().note.trim()}>
+                      {(note) => <p class="live-preview-note">{note()}</p>}
+                    </Show>
+                    <Show when={draft().priceHint.trim()}>
+                      {(price) => (
+                        <p class="live-preview-price">{price()}</p>
+                      )}
+                    </Show>
+                  </div>
+                </div>
+              </aside>
+            </div>
           </section>
 
           <section class="admin-list-section" aria-labelledby="wishes-list-heading">
             <h2 id="wishes-list-heading" class="section-heading">
-              Dans ta liste
-              <span class="badge badge--neutral">{items().length}</span>
+              <span>Dans ta liste</span>
+              <span class="section-count num">({items().length})</span>
             </h2>
 
             <Show
@@ -702,6 +794,7 @@ export function AdminPage() {
                             fallback={
                               <span
                                 class="wish-placeholder"
+                                data-pattern={titlePattern(item.title)}
                                 style={{ "--hue": String(titleHue(item.title)) }}
                               >
                                 <span class="admin-item-initial">
@@ -735,7 +828,7 @@ export function AdminPage() {
                                   rel="noopener noreferrer"
                                   class="wish-title-link"
                                 >
-                                  {item.title}
+                                  <span>{item.title}</span>
                                   <ExternalLinkIcon
                                     size={13}
                                     class="wish-ext-icon"
@@ -750,8 +843,11 @@ export function AdminPage() {
                             <div class="wish-meta">
                               <Show when={item.priceHint}>
                                 {(price) => (
-                                  <span class="wish-price">{price()}</span>
+                                  <span class="admin-item-price">{price()}</span>
                                 )}
+                              </Show>
+                              <Show when={item.priceHint && domain()}>
+                                <span class="meta-sep" aria-hidden="true">·</span>
                               </Show>
                               <Show when={domain()}>
                                 {(host) => (
@@ -770,16 +866,16 @@ export function AdminPage() {
                           <button
                             type="button"
                             class="btn btn-ghost btn-sm"
-                            aria-label={`Modifier « ${item.title} »`}
+                            aria-label={`Modifier «\u00A0${item.title}\u00A0»`}
                             onClick={() => openEditModal(item)}
                           >
                             <PencilIcon size={14} />
-                            Modifier
+                            <span>Modifier</span>
                           </button>
                           <button
                             type="button"
                             class="btn btn-ghost btn-sm btn-ghost--danger"
-                            aria-label={`Supprimer « ${item.title} »`}
+                            aria-label={`Supprimer «\u00A0${item.title}\u00A0»`}
                             onClick={() => {
                               setDeleteError(null);
                               setDeleteTarget(item);
@@ -787,7 +883,7 @@ export function AdminPage() {
                             }}
                           >
                             <TrashIcon size={14} />
-                            Supprimer
+                            <span>Supprimer</span>
                           </button>
                         </div>
                       </li>
@@ -928,7 +1024,7 @@ export function AdminPage() {
           <ModalDialog
             open={deleteOpen()}
             dismissible={!deleteBusy()}
-            title="Supprimer cette envie ?"
+            title="Supprimer cette envie\u00A0?"
             subtitle={deleteTarget()?.title}
             size="sm"
             onClose={() => setDeleteOpen(false)}

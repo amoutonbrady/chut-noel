@@ -1,6 +1,6 @@
-import { Match, Show, Switch, useContext } from "solid-js";
+import { createSignal, Match, onSettled, Show, Switch, useContext } from "solid-js";
 import { createRouter, RouterContext } from "./lib/router";
-import { ArrowLeftIcon, GiftIcon } from "./components/Icons";
+import { ArrowLeftIcon, GiftIcon, RibbonBowIcon } from "./components/Icons";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { ToastProvider } from "./components/ToastHost";
 import { AdminPage } from "./pages/AdminPage";
@@ -8,6 +8,14 @@ import { WishlistPage } from "./pages/WishlistPage";
 
 function AppShell() {
   const router = useContext(RouterContext);
+  const [scrolled, setScrolled] = createSignal(false);
+
+  onSettled(() => {
+    const onScroll = () => setScrolled(window.scrollY > 12);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  });
 
   const handleLinkClick = (to: string) => (e: MouseEvent) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
@@ -25,17 +33,13 @@ function AppShell() {
         Aller au contenu principal
       </a>
 
-      <header class="site-header">
+      <header class={["site-header", { "is-scrolled": scrolled() }]}>
         <div class="site-header-inner">
-          <a
-            href="/"
-            class="brand"
-            onClick={handleLinkClick("/")}
-          >
-            <span class="brand-avatar" aria-hidden="true">
-              A
+          <a href="/" class="brand" onClick={handleLinkClick("/")}>
+            <span class="brand-mark" aria-hidden="true">
+              <RibbonBowIcon size={17} />
             </span>
-            <span class="brand-name">Alexandre</span>
+            <span class="brand-name">Envies d'Alexandre</span>
           </a>
 
           <nav class="header-actions" aria-label="Navigation principale">

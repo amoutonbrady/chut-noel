@@ -26,6 +26,96 @@ export function GiftIcon(props: IconProps) {
   );
 }
 
+export function RibbonBowIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 18)} class={props.class}>
+      <path d="M12 11c-1.8-3.8-5.4-5.2-7-3.4-1.5 1.7-.2 4.6 3.3 4.4 1.4-.1 2.7-.5 3.7-1Z" />
+      <path d="M12 11c1.8-3.8 5.4-5.2 7-3.4 1.5 1.7.2 4.6-3.3 4.4-1.4-.1-2.7-.5-3.7-1Z" />
+      <path d="M12 11.5 8.5 19" />
+      <path d="M12 11.5 15.5 19" />
+      <circle cx="12" cy="11.2" r="1.4" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/** Tactile wax-sealed secret envelope for the anti-spoiler gate. */
+export function EnvelopeSealIllustration(props: { class?: string }) {
+  return (
+    <svg
+      width="124"
+      height="96"
+      viewBox="0 0 124 96"
+      fill="none"
+      aria-hidden="true"
+      class={props.class}
+    >
+      {/* Paper envelope body */}
+      <rect
+        x="10"
+        y="20"
+        width="104"
+        height="68"
+        rx="10"
+        fill="var(--bg-card)"
+        stroke="var(--border-primary)"
+        stroke-width="1.5"
+      />
+      {/* Subtle stationery card peeking inside when flap lifts */}
+      <rect
+        class="envelope-letter"
+        x="20"
+        y="24"
+        width="84"
+        height="48"
+        rx="6"
+        fill="var(--accent-soft-bg)"
+        stroke="color-mix(in oklab, var(--accent) 28%, transparent)"
+        stroke-width="1.2"
+      />
+      {/* Subtle diagonal lining inside */}
+      <path
+        d="M12 85 48 53M112 85 76 53"
+        stroke="var(--border-subtle)"
+        stroke-width="1.35"
+        stroke-linecap="round"
+      />
+      {/* Top envelope flap (gently opens on hover) */}
+      <g class="envelope-flap">
+        <path
+          d="M13 23.5 59.2 57.2a4.8 4.8 0 0 0 5.6 0L111 23.5"
+          fill="var(--bg-well)"
+          stroke="var(--border-primary)"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        {/* Wax seal */}
+        <g class="wax-seal-mark">
+          <circle cx="62" cy="56" r="16.5" fill="var(--accent)" />
+          <circle
+            cx="62"
+            cy="56"
+            r="12.5"
+            fill="none"
+            stroke="var(--on-accent)"
+            stroke-opacity="0.38"
+            stroke-width="1.25"
+            stroke-dasharray="2.5 2"
+          />
+          {/* Embossed bow inside seal */}
+          <path
+            d="M62 55.5c-1.4-2.8-4.2-3.9-5.4-2.5-1.1 1.3-.1 3.4 2.6 3.3 1.1-.1 2.1-.4 2.8-.8Zm0 0c1.4-2.8 4.2-3.9 5.4-2.5 1.1 1.3.1 3.4-2.6 3.3-1.1-.1-2.1-.4-2.8-.8Zm0 .5-2.6 5.5m2.6-5.5 2.6 5.5"
+            stroke="var(--on-accent)"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </g>
+      </g>
+    </svg>
+  );
+}
+
 export function CheckIcon(props: IconProps) {
   return (
     <svg {...base(props.size ?? 14)} class={props.class}>
@@ -164,6 +254,26 @@ export function ListIcon(props: IconProps) {
   );
 }
 
+export function LayoutGridIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 15)} class={props.class}>
+      <rect x="3" y="3" width="7.5" height="7.5" rx="1.5" />
+      <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" />
+      <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" />
+    </svg>
+  );
+}
+
+export function RowsIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 15)} class={props.class}>
+      <rect x="3" y="4" width="18" height="6" rx="1.5" />
+      <rect x="3" y="14" width="18" height="6" rx="1.5" />
+    </svg>
+  );
+}
+
 export function WalletIcon(props: IconProps) {
   return (
     <svg {...base(props.size ?? 15)} class={props.class}>
@@ -244,6 +354,23 @@ export function ArrowLeftIcon(props: IconProps) {
     <svg {...base(props.size ?? 15)} class={props.class}>
       <path d="m12 19-7-7 7-7" />
       <path d="M19 12H5" />
+    </svg>
+  );
+}
+
+export function ArrowRightIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 15)} class={props.class}>
+      <path d="m12 5 7 7-7 7" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+export function SparklesIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 15)} class={props.class}>
+      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0Z" />
     </svg>
   );
 }

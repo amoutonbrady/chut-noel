@@ -1,4 +1,4 @@
-import { createMemo, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { Popover } from "@kobalte/core/popover";
 import { Select } from "@kobalte/core/select";
@@ -13,19 +13,64 @@ import {
   ChevronDownIcon,
   CircleDotIcon,
   ClockIcon,
+  LayoutGridIcon,
   ListIcon,
   ListOrderedIcon,
   LockIcon,
+  RowsIcon,
   WalletIcon,
 } from "./Icons";
 
 export type AvailabilityFilter = "all" | "available" | "reserved";
 export type SortKey = "list" | "recent" | "price-asc" | "price-desc";
+export type ViewMode = "grid" | "list";
 
-const euros = (n: number) => `${n} €`;
+const euros = (n: number) => `${n}\u00A0€`;
+
+/** Measures the pressed ToggleGroup item so a physical pill glides underneath it. */
+function useSlidingPill(track: () => unknown) {
+  let groupEl: HTMLElement | undefined;
+  const [pill, setPill] = createSignal<{ x: number; w: number } | null>(null);
+  const [animate, setAnimate] = createSignal(false);
+
+  const measure = () => {
+    if (!groupEl) return;
+    const active = groupEl.querySelector<HTMLElement>("[data-pressed]");
+    if (!active) return;
+    const next = { x: active.offsetLeft, w: active.offsetWidth };
+    if (next.w <= 0) return;
+    setPill((prev) => {
+      if (prev && !animate()) {
+        // Enable glide only after initial mount position has settled
+        requestAnimationFrame(() => setAnimate(true));
+      }
+      return next;
+    });
+  };
+
+  createEffect(track, () => {
+    queueMicrotask(measure);
+  });
+
+  onSettled(() => {
+    measure();
+    if (!groupEl || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(groupEl);
+    return () => ro.disconnect();
+  });
+
+  return {
+    setRef: (el: HTMLElement) => {
+      groupEl = el;
+    },
+    pill,
+    animate,
+  };
+}
 
 /* --------------------------------------------------------------------------
-   Availability: Kobalte ToggleGroup (roving focus, arrow keys)
+   Availability: Kobalte ToggleGroup (roving focus, arrow keys + sliding pill)
    -------------------------------------------------------------------------- */
 
 const AVAILABILITY: {
@@ -43,9 +88,17 @@ export function AvailabilityToggle(props: {
   counts: Record<AvailabilityFilter, number>;
   onChange: (value: AvailabilityFilter) => void;
 }) {
+  const slider = useSlidingPill(() => [
+    props.value,
+    props.counts.all,
+    props.counts.available,
+    props.counts.reserved,
+  ]);
+
   return (
     <ToggleGroup
-      class="segmented"
+      ref={slider.setRef}
+      class={["segmented", { "has-indicator": Boolean(slider.pill()) }]}
       aria-label="Filtrer par disponibilité"
       value={props.value}
       // Clicking the pressed item would clear the group: always keep one selected
@@ -53,6 +106,18 @@ export function AvailabilityToggle(props: {
         if (value) props.onChange(value as AvailabilityFilter);
       }}
     >
+      <Show when={slider.pill()}>
+        {(pos) => (
+          <span
+            class={["segmented-indicator", { "is-animated": slider.animate() }]}
+            aria-hidden="true"
+            style={{
+              "--pill-x": `${pos().x}px`,
+              "--pill-w": `${pos().w}px`,
+            }}
+          />
+        )}
+      </Show>
       <For each={AVAILABILITY}>
         {(option) => (
           <ToggleGroup.Item class="segmented-btn" value={option.value}>
@@ -62,6 +127,61 @@ export function AvailabilityToggle(props: {
           </ToggleGroup.Item>
         )}
       </For>
+    </ToggleGroup>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   View Mode: Connected grid/list toggle (desktop & tablet)
+   -------------------------------------------------------------------------- */
+
+export function ViewModeToggle(props: {
+  value: ViewMode;
+  onChange: (value: ViewMode) => void;
+}) {
+  const slider = useSlidingPill(() => props.value);
+
+  return (
+    <ToggleGroup
+      ref={slider.setRef}
+      class={[
+        "segmented segmented--compact view-toggle",
+        { "has-indicator": Boolean(slider.pill()) },
+      ]}
+      aria-label="Mode d'affichage"
+      value={props.value}
+      onChange={(value) => {
+        if (value) props.onChange(value as ViewMode);
+      }}
+    >
+      <Show when={slider.pill()}>
+        {(pos) => (
+          <span
+            class={["segmented-indicator", { "is-animated": slider.animate() }]}
+            aria-hidden="true"
+            style={{
+              "--pill-x": `${pos().x}px`,
+              "--pill-w": `${pos().w}px`,
+            }}
+          />
+        )}
+      </Show>
+      <ToggleGroup.Item
+        class="segmented-btn segmented-btn--icon"
+        value="grid"
+        aria-label="Affichage en grille"
+        title="Affichage en grille"
+      >
+        <LayoutGridIcon size={15} />
+      </ToggleGroup.Item>
+      <ToggleGroup.Item
+        class="segmented-btn segmented-btn--icon"
+        value="list"
+        aria-label="Affichage en liste"
+        title="Affichage en liste"
+      >
+        <RowsIcon size={15} />
+      </ToggleGroup.Item>
     </ToggleGroup>
   );
 }
@@ -98,7 +218,7 @@ export function BudgetFilter(props: {
     if (lo <= 0 && hi >= props.ceiling) return "Tous les prix";
     if (lo <= 0) return `Jusqu'à ${euros(hi)}`;
     if (hi >= props.ceiling) return `${euros(lo)} et plus`;
-    return `${lo} – ${euros(hi)}`;
+    return `${lo} à ${euros(hi)}`;
   };
 
   const triggerLabel = () =>
@@ -169,7 +289,7 @@ export function BudgetFilter(props: {
                       "price-bar",
                       { "is-in": bar.to > current()[0] && bar.from < current()[1] },
                     ]}
-                    style={{ height: `${Math.max(6, bar.height * 100)}%` }}
+                    style={{ height: `${Math.max(8, bar.height * 100)}%` }}
                   />
                 )}
               </For>
@@ -218,12 +338,13 @@ export function BudgetFilter(props: {
               />
             </div>
           </div>
-          <div class="price-presets">
+
+          <div class="price-presets" role="group" aria-label="Tranches rapides">
             <For each={presets()}>
               {(preset) => (
                 <button
                   type="button"
-                  class={["chip", { "is-active": isCurrent(preset.range) }]}
+                  class={["preset-btn", { "is-active": isCurrent(preset.range) }]}
                   aria-pressed={isCurrent(preset.range) ? "true" : "false"}
                   onClick={() => update(preset.range)}
                 >

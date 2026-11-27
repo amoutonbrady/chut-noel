@@ -3,19 +3,23 @@ import type { ClaimMode, PublicClaim, WishItem } from "../shared/types";
 import { extractDomain } from "../lib/api";
 import { itemDates } from "../lib/dates";
 import type { SavedClaimToken } from "../lib/api";
+import type { ViewMode } from "./WishFilters";
 import {
   CheckIcon,
   CircleDotIcon,
   ClockIcon,
   ExternalLinkIcon,
+  GiftIcon,
   LockIcon,
+  RibbonBowIcon,
   UsersIcon,
 } from "./Icons";
 
 export interface WishCardProps {
   item: WishItem;
-  /** Alexandre's view: hide every status badge and action. */
+  /** Alexandre's view: hide every status and action. */
   owner?: boolean;
+  layout?: ViewMode;
   claims: PublicClaim[];
   myTokens: SavedClaimToken[];
   justReserved?: boolean;
@@ -29,11 +33,26 @@ export interface WishCardProps {
   onRequestRelease: (item: WishItem, claims: PublicClaim[]) => void;
 }
 
-/** Stable per-title hue so each placeholder gets its own wrapping paper. */
-export function titleHue(title: string): number {
+const WRAP_PATTERNS = ["ribbon", "stripe", "dots", "check"] as const;
+export type WrapPattern = (typeof WRAP_PATTERNS)[number];
+
+function titleHash(title: string): number {
   let hash = 0;
   for (const ch of title) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
-  return Math.abs(hash) % 360;
+  return Math.abs(hash);
+}
+
+/** Curated stationery hues so every placeholder feels part of the same palette. */
+const WRAP_HUES = [18, 36, 152, 185, 224, 265, 342, 72];
+
+export function titleHue(title: string): number {
+  const h = titleHash(title);
+  return WRAP_HUES[h % WRAP_HUES.length];
+}
+
+export function titlePattern(title: string): WrapPattern {
+  const h = titleHash(title);
+  return WRAP_PATTERNS[(h >> 3) % WRAP_PATTERNS.length];
 }
 
 export function titleInitial(title: string): string {
@@ -88,12 +107,6 @@ export function WishCard(props: WishCardProps) {
       .join(", ");
   });
 
-  // My own solo reservation without notes: the badge already says it all
-  const showClaimInfo = () =>
-    !props.owner &&
-    isReserved() &&
-    !(myClaimEntry() && !isGroup() && notesFromGuests().length === 0);
-
   const notesFromGuests = createMemo(() =>
     props.claims
       .filter((c) => c.message?.trim())
@@ -104,7 +117,13 @@ export function WishCard(props: WishCardProps) {
       })),
   );
 
-  const statusBadge = () => (
+  // My own solo reservation without notes: the status line already says it all
+  const showClaimInfo = () =>
+    !props.owner &&
+    isReserved() &&
+    !(myClaimEntry() && !isGroup() && notesFromGuests().length === 0);
+
+  const statusIndicator = () => (
     <Show
       when={myClaimEntry()}
       fallback={
@@ -114,59 +133,87 @@ export function WishCard(props: WishCardProps) {
             <Show
               when={isReserved()}
               fallback={
-                <span class="badge badge--available">
-                  <CircleDotIcon size={13} />
-                  Disponible
+                <span class="wish-status wish-status--available">
+                  <CircleDotIcon size={14} />
+                  <span>Disponible</span>
                 </span>
               }
             >
-              <span class="badge badge--reserved">
-                <LockIcon size={13} />
-                Déjà réservé
+              <span class="wish-status wish-status--reserved">
+                <LockIcon size={14} />
+                <span>Déjà réservé</span>
               </span>
             </Show>
           }
         >
-          <span class="badge badge--group">
-            <UsersIcon size={13} />
-            Cadeau groupé{" "}
-            <span class="badge-count">({props.claims.length})</span>
+          <span class="wish-status wish-status--group">
+            <UsersIcon size={14} />
+            <span>
+              Cadeau groupé · <span class="num">{props.claims.length}</span>
+            </span>
           </span>
         </Show>
       }
     >
-      <span class="badge badge--mine">
+      <span class="wish-status wish-status--mine">
         <CheckIcon
-          size={13}
+          size={14}
           class={props.justReserved ? "check-draw" : undefined}
         />
-        {isGroup() ? "Tu participes" : "Réservé par toi"}
+        <span>{isGroup() ? "Tu participes" : "Réservé par toi"}</span>
       </span>
     </Show>
   );
 
+  const isTakenByOther = () =>
+    !props.owner && isReserved() && !isGroup() && !myClaimEntry();
+
+  // Valid CSS <custom-ident> per item so Grid/List & filter View Transitions morph cleanly
+  const vtName = () => `wish-${props.item.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+
   return (
     <li
+      style={{ "--vt-name": vtName() }}
       class={[
-        "wish-row",
+        "wish-card",
+        props.layout === "list" ? "wish-card--list" : "wish-card--grid",
         {
-          "wish-row--reserved":
-            !props.owner && isReserved() && !isGroup() && !myClaimEntry(),
-          "wish-row--mine": Boolean(myClaimEntry()),
-          "wish-row--celebrate": Boolean(props.justReserved),
+          "wish-card--reserved": isTakenByOther(),
+          "wish-card--group": !props.owner && isGroup() && !myClaimEntry(),
+          "wish-card--mine": !props.owner && Boolean(myClaimEntry()),
+          "wish-card--celebrate": Boolean(props.justReserved),
         },
       ]}
     >
-      <div class="wish-thumb">
+      <Show when={props.justReserved}>
+        <div class="confetti-burst" aria-hidden="true">
+          <span class="confetti-piece" />
+          <span class="confetti-piece" />
+          <span class="confetti-piece" />
+          <span class="confetti-piece" />
+          <span class="confetti-piece" />
+          <span class="confetti-piece" />
+          <span class="confetti-piece" />
+          <span class="confetti-piece" />
+        </div>
+      </Show>
+
+      <div class="wish-media">
         <Show
           when={props.item.imageUrl && !imgFailed()}
           fallback={
             <div
               class="wish-placeholder"
+              data-pattern={titlePattern(props.item.title)}
               style={{ "--hue": String(titleHue(props.item.title)) }}
               aria-hidden="true"
             >
-              <span class="wish-monogram">{titleInitial(props.item.title)}</span>
+              <div class="wish-tag">
+                <span class="wish-tag-bow">
+                  <RibbonBowIcon size={13} />
+                </span>
+                <span class="wish-monogram">{titleInitial(props.item.title)}</span>
+              </div>
             </div>
           }
         >
@@ -184,45 +231,46 @@ export function WishCard(props: WishCardProps) {
       </div>
 
       <div class="wish-body">
-        <div class="wish-head">
-          <h3 class="wish-title">
-            <Show
-              when={props.item.url}
-              fallback={<span>{props.item.title}</span>}
-            >
-              {(href) => (
-                <a
-                  href={href()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="wish-title-link"
-                >
-                  {props.item.title}
-                  <ExternalLinkIcon size={13} class="wish-ext-icon" />
-                  <span class="sr-only"> (nouvel onglet)</span>
-                </a>
-              )}
-            </Show>
-          </h3>
-        </div>
-
         <Show when={!props.owner || domain()}>
           <div class="wish-meta">
-            <Show when={!props.owner}>{statusBadge()}</Show>
+            <Show when={!props.owner}>{statusIndicator()}</Show>
+            <Show when={!props.owner && domain()}>
+              <span class="meta-sep" aria-hidden="true">·</span>
+            </Show>
             <Show when={domain()}>
               {(host) => <span class="wish-domain">{host()}</span>}
             </Show>
           </div>
         </Show>
 
+        <h3 class="wish-title">
+          <Show
+            when={props.item.url}
+            fallback={<span>{props.item.title}</span>}
+          >
+            {(href) => (
+              <a
+                href={href()}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="wish-title-link"
+              >
+                <span>{props.item.title}</span>
+                <ExternalLinkIcon size={14} class="wish-ext-icon" />
+                <span class="sr-only"> (nouvel onglet)</span>
+              </a>
+            )}
+          </Show>
+        </h3>
+
         <Show when={props.item.note}>
           {(note) => <p class="wish-note">{note()}</p>}
         </Show>
 
         <Show when={showClaimInfo()}>
-          <div class="wish-claim-info">
+          <div class="wish-claim-slip">
             <p class="wish-participants">
-              {isGroup() ? "Participent : " : "Réservé par "}
+              {isGroup() ? "Participent\u00A0: " : "Réservé par "}
               <strong>{participantsLabel()}</strong>
             </p>
             <Show when={notesFromGuests().length > 0}>
@@ -239,13 +287,12 @@ export function WishCard(props: WishCardProps) {
 
         <Show when={dates()}>
           <p class="wish-dates" title={fullDates()}>
-            <ClockIcon size={12} />
-            {dates()}
+            <ClockIcon size={13} />
+            <span>{dates()}</span>
           </p>
         </Show>
       </div>
 
-      {/* Price and the main action sit on the right, where the eye ends a row */}
       <Show when={props.item.priceHint || !props.owner}>
         <div class="wish-aside">
           <Show when={props.item.priceHint}>
@@ -261,19 +308,20 @@ export function WishCard(props: WishCardProps) {
                   disabled={props.busy}
                   onClick={() => props.onReserve(props.item, "solo")}
                 >
-                  Réserver
+                  <GiftIcon size={14} />
+                  <span>Réserver</span>
                 </button>
               </Show>
 
               <Show when={isGroup() && !myClaimEntry()}>
                 <button
                   type="button"
-                  class="btn btn-primary btn-sm"
+                  class="btn btn-group btn-sm"
                   disabled={props.busy}
                   onClick={() => props.onReserve(props.item, "group")}
                 >
                   <UsersIcon size={14} />
-                  Participer
+                  <span>Participer</span>
                 </button>
               </Show>
 
@@ -304,7 +352,7 @@ export function WishCard(props: WishCardProps) {
               <Show when={otherClaims().length > 0}>
                 <button
                   type="button"
-                  class="btn btn-ghost btn-sm"
+                  class="btn btn-subtle btn-sm"
                   disabled={props.busy}
                   onClick={() => props.onRequestRelease(props.item, otherClaims())}
                 >

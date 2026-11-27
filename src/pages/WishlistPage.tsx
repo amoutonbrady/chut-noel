@@ -5,6 +5,7 @@ import {
   Errored,
   For,
   Loading,
+  onSettled,
   refresh,
   Show,
   useContext,
@@ -36,18 +37,71 @@ import {
   AvailabilityToggle,
   BudgetFilter,
   SortSelect,
+  ViewModeToggle,
 } from "../components/WishFilters";
-import type { AvailabilityFilter, SortKey } from "../components/WishFilters";
+import type {
+  AvailabilityFilter,
+  SortKey,
+  ViewMode,
+} from "../components/WishFilters";
 import {
   AlertIcon,
+  ArrowRightIcon,
+  EnvelopeSealIllustration,
   GiftIcon,
+  LockIcon,
   PencilIcon,
-  ShieldIcon,
   UsersIcon,
 } from "../components/Icons";
 import { ModalDialog } from "../components/ModalDialog";
 import { ToastContext } from "../components/ToastHost";
 import { WishCard } from "../components/WishCard";
+
+const VIEW_MODE_KEY = "wish:view";
+
+function loadViewMode(): ViewMode {
+  try {
+    const saved = localStorage.getItem(VIEW_MODE_KEY);
+    if (saved === "list" || saved === "grid") return saved;
+  } catch {
+    // Ignore storage errors
+  }
+  return "grid";
+}
+
+function saveViewMode(mode: ViewMode): void {
+  try {
+    localStorage.setItem(VIEW_MODE_KEY, mode);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+/** Smoothly morph cards on Grid/List or Filter/Sort updates when View Transitions are supported. */
+function runListTransition(update: () => void): void {
+  const reduce =
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (
+    reduce ||
+    typeof document === "undefined" ||
+    typeof document.startViewTransition !== "function"
+  ) {
+    update();
+    return;
+  }
+  const root = document.documentElement;
+  // Avoid overlapping with the circular theme reveal
+  if (root.dataset.themeTransition) {
+    update();
+    return;
+  }
+  root.dataset.listTransition = "morph";
+  const transition = document.startViewTransition(update);
+  void transition.finished.finally(() => {
+    delete root.dataset.listTransition;
+  });
+}
 
 // Unpriced items always go last when sorting by price
 function sortItems(list: WishItem[], key: SortKey): WishItem[] {
@@ -81,11 +135,17 @@ function WishlistContent(props: WishlistContentProps) {
   const [filter, setFilter] = createSignal<AvailabilityFilter>("all");
   const [budget, setBudget] = createSignal<PriceRange | null>(null);
   const [sort, setSort] = createSignal<SortKey>("list");
+  const [viewMode, setViewMode] = createSignal<ViewMode>(loadViewMode());
   const [myTokens, setMyTokens] = createSignal<SavedClaimToken[]>(
     getSavedClaimTokens(),
   );
   const [justReservedId, setJustReservedId] = createSignal<string | null>(null);
   const [busyItemId, setBusyItemId] = createSignal<string | null>(null);
+  let celebrateTimer: number | undefined;
+
+  onSettled(() => () => {
+    window.clearTimeout(celebrateTimer);
+  });
 
   // Reserve / participate dialog. `open` is separate from the target so the
   // content stays put while the dialog fades out.
@@ -112,6 +172,17 @@ function WishlistContent(props: WishlistContentProps) {
 
   const items = createMemo(() => props.data.items);
   const claimsByItem = createMemo(() => props.data.claimsByItem);
+
+  const totalReservedCount = createMemo(
+    () =>
+      items().filter((item) => (claimsByItem()[item.id]?.length ?? 0) > 0)
+        .length,
+  );
+  const progressPct = createMemo(() =>
+    items().length > 0
+      ? Math.round((totalReservedCount() / items().length) * 100)
+      : 0,
+  );
 
   const prices = createMemo(() =>
     items()
@@ -148,8 +219,26 @@ function WishlistContent(props: WishlistContentProps) {
 
   const filtersActive = () => filter() !== "all" || budget() !== null;
   const resetFilters = () => {
-    setFilter("all");
-    setBudget(null);
+    runListTransition(() => {
+      setFilter("all");
+      setBudget(null);
+    });
+  };
+
+  const handleFilterChange = (next: AvailabilityFilter) => {
+    if (next === filter()) return;
+    runListTransition(() => setFilter(next));
+  };
+
+  const handleSortChange = (next: SortKey) => {
+    if (next === sort()) return;
+    runListTransition(() => setSort(next));
+  };
+
+  const handleViewChange = (mode: ViewMode) => {
+    if (mode === viewMode()) return;
+    saveViewMode(mode);
+    runListTransition(() => setViewMode(mode));
   };
 
   const targetExistingClaims = createMemo(() => {
@@ -204,6 +293,10 @@ function WishlistContent(props: WishlistContentProps) {
       });
       setMyTokens(getSavedClaimTokens());
       setJustReservedId(target.id);
+      window.clearTimeout(celebrateTimer);
+      celebrateTimer = window.setTimeout(() => {
+        setJustReservedId((current) => (current === target.id ? null : current));
+      }, 1600);
       setReserveOpen(false);
       props.onRefresh();
       toast.show(
@@ -309,7 +402,7 @@ function WishlistContent(props: WishlistContentProps) {
     if (items().length === 0) {
       return {
         title: "La liste est encore vide",
-        desc: "Alexandre n'a pas encore ajouté d'idées. Repasse bientôt !",
+        desc: "Alexandre n'a pas encore ajouté d'idées. Repasse bientôt\u00A0!",
       };
     }
     if (budgetItems().length === 0) {
@@ -326,18 +419,41 @@ function WishlistContent(props: WishlistContentProps) {
     }
     return {
       title: "Rien n'est réservé pour l'instant",
-      desc: "Choisis une envie : une fois réservée, personne d'autre ne pourra la prendre.",
+      desc: "Choisis une envie\u00A0: une fois réservée, personne d'autre ne pourra la prendre.",
     };
   };
 
   return (
     <div class="wishlist-view">
-      <section class="hero reveal-soft">
-        <h1 class="hero-title">Liste d'envies</h1>
-        <p class="hero-subtitle">
-          Réserve une idée pour éviter les doublons. Alexandre ne voit pas qui
-          offre quoi.
-        </p>
+      <section class="masthead reveal-soft">
+        <div class="masthead-copy">
+          <h1 class="hero-title">Liste d'envies</h1>
+          <p class="hero-subtitle">
+            Réserve une idée pour éviter les doublons. Alexandre ne voit pas qui
+            offre quoi.
+          </p>
+        </div>
+
+        <Show when={items().length > 0}>
+          <div
+            class="progress-meter"
+            aria-label={`${totalReservedCount()} envies réservées sur ${items().length}`}
+          >
+            <div class="progress-meter-head">
+              <span class="progress-meter-count">
+                <strong class="num">{totalReservedCount()}</strong> sur{" "}
+                <span class="num">{items().length}</span> réservées
+              </span>
+              <span class="progress-meter-pct num">{progressPct()}%</span>
+            </div>
+            <div class="progress-track" aria-hidden="true">
+              <div
+                class="progress-fill"
+                style={{ width: `${progressPct()}%` }}
+              />
+            </div>
+          </div>
+        </Show>
       </section>
 
       <Show when={items().length > 0}>
@@ -349,7 +465,7 @@ function WishlistContent(props: WishlistContentProps) {
               available: availableCount(),
               reserved: reservedCount(),
             }}
-            onChange={setFilter}
+            onChange={handleFilterChange}
           />
           <div class="toolbar-filters">
             <BudgetFilter
@@ -360,7 +476,8 @@ function WishlistContent(props: WishlistContentProps) {
               unpricedCount={items().length - prices().length}
               onChange={setBudget}
             />
-            <SortSelect value={sort()} onChange={setSort} />
+            <SortSelect value={sort()} onChange={handleSortChange} />
+            <ViewModeToggle value={viewMode()} onChange={handleViewChange} />
           </div>
         </div>
       </Show>
@@ -386,12 +503,21 @@ function WishlistContent(props: WishlistContentProps) {
           </section>
         }
       >
-        <ul class="wish-list" aria-label="Envies">
+        <ul
+          class={[
+            "wish-collection",
+            viewMode() === "list"
+              ? "wish-collection--list"
+              : "wish-collection--grid",
+          ]}
+          aria-label="Envies"
+        >
           {/* Keyed by id: a refresh after reserving keeps each card mounted */}
           <For each={filteredItems()} keyed={(item) => item.id}>
             {(item) => (
               <WishCard
                 item={item()}
+                layout={viewMode()}
                 claims={claimsByItem()[item().id] ?? []}
                 myTokens={myTokens().filter((t) => t.itemId === item().id)}
                 justReserved={justReservedId() === item().id}
@@ -503,7 +629,7 @@ function WishlistContent(props: WishlistContentProps) {
                 maxlength={240}
                 placeholder={
                   groupChosen()
-                    ? "Ex. Je commande dimanche, dites-moi si vous participez !"
+                    ? "Ex. Je commande dimanche, dites-moi si vous participez\u00A0!"
                     : "Ex. Je le commande cette semaine."
                 }
                 value={guestMessage()}
@@ -531,7 +657,7 @@ function WishlistContent(props: WishlistContentProps) {
               </button>
               <button
                 type="submit"
-                class="btn btn-primary"
+                class={["btn", groupChosen() ? "btn-group" : "btn-primary"]}
                 disabled={submitting()}
                 aria-busy={submitting() ? "true" : undefined}
               >
@@ -552,8 +678,8 @@ function WishlistContent(props: WishlistContentProps) {
         dismissible={!releasingId()}
         title={
           releaseFreesItem()
-            ? "Rendre cette envie disponible ?"
-            : "Retirer une participation ?"
+            ? "Rendre cette envie disponible\u00A0?"
+            : "Retirer une participation\u00A0?"
         }
         subtitle={releaseTarget()?.item.title}
         size="sm"
@@ -603,7 +729,11 @@ function WishlistContent(props: WishlistContentProps) {
                         void handleForceRelease(target().claims[0].id)
                       }
                     >
-                      {releasingId() ? "Un instant…" : releaseFreesItem() ? "Rendre disponible" : "Retirer sa participation"}
+                      {releasingId()
+                        ? "Un instant…"
+                        : releaseFreesItem()
+                          ? "Rendre disponible"
+                          : "Retirer sa participation"}
                     </button>
                   </div>
                 }
@@ -649,10 +779,10 @@ function WishlistContent(props: WishlistContentProps) {
 const ListSkeleton = () => (
   <div class="skeleton-wrap" aria-busy="true" aria-label="Chargement de la liste">
     <div class="skeleton-hero" />
-    <div class="wish-list">
-      <div class="skeleton-row" />
-      <div class="skeleton-row" />
-      <div class="skeleton-row" />
+    <div class="skeleton-grid">
+      <div class="skeleton-tile" />
+      <div class="skeleton-tile" />
+      <div class="skeleton-tile" />
     </div>
   </div>
 );
@@ -725,19 +855,21 @@ function OwnerLoader(props: { token: string }) {
     >
       <Loading on="owner-items" fallback={<ListSkeleton />}>
         <div class="wishlist-view">
-          <section class="hero reveal-soft">
-            <h1 class="hero-title">Ta liste d'envies</h1>
-            <p class="hero-subtitle">
-              Telle que la voient tes proches, sans les réservations.
-            </p>
-            <div class="hero-actions">
+          <section class="masthead reveal-soft">
+            <div class="masthead-copy">
+              <h1 class="hero-title">Ta liste d'envies</h1>
+              <p class="hero-subtitle">
+                Telle que la voient tes proches, sans les réservations.
+              </p>
+            </div>
+            <div class="masthead-actions">
               <button
                 type="button"
                 class="btn btn-primary btn-sm"
                 onClick={() => router.navigate("/admin")}
               >
                 <PencilIcon size={14} />
-                Modifier ma liste
+                <span>Modifier ma liste</span>
               </button>
             </div>
           </section>
@@ -763,12 +895,13 @@ function OwnerLoader(props: { token: string }) {
               </section>
             }
           >
-            <ul class="wish-list" aria-label="Mes envies">
+            <ul class="wish-collection wish-collection--grid" aria-label="Mes envies">
               <For each={dataMemo().items} keyed={(item) => item.id}>
                 {(item) => (
                   <WishCard
                     item={item()}
                     owner
+                    layout="grid"
                     claims={[]}
                     myTokens={[]}
                     onReserve={noop}
@@ -803,34 +936,55 @@ export function WishlistPage() {
     <Show
       when={isProche()}
       fallback={
-        <section class="guard-card reveal-soft" aria-labelledby="gate-heading">
-          <div class="guard-icon" aria-hidden="true">
-            <ShieldIcon size={22} />
+        <section class="gate-stage reveal-soft" aria-labelledby="gate-heading">
+          <div class="gate-envelope" aria-hidden="true">
+            <EnvelopeSealIllustration class="gate-envelope-svg" />
           </div>
-          <h1 id="gate-heading" class="guard-title">
+
+          <h1 id="gate-heading" class="gate-title">
             Qui es-tu&nbsp;?
           </h1>
-          <p class="guard-desc">
+          <p class="gate-desc">
             Cette page montre qui offre quoi. Pour garder la surprise, Alexandre
             ne doit pas la voir.
           </p>
-          <div class="guard-actions">
+
+          <div class="gate-choices">
             <button
               type="button"
-              class="btn btn-primary"
+              class="gate-choice gate-choice--primary"
               onClick={() => {
                 markProcheDevice();
                 setIsProche(true);
               }}
             >
-              Je suis un·e proche
+              <span class="gate-choice-icon" aria-hidden="true">
+                <GiftIcon size={20} />
+              </span>
+              <span class="gate-choice-copy">
+                <span class="gate-choice-title">Je suis un·e proche</span>
+                <span class="gate-choice-hint">
+                  Découvrir la liste et réserver en secret
+                </span>
+              </span>
+              <ArrowRightIcon size={17} class="gate-choice-arrow" />
             </button>
+
             <button
               type="button"
-              class="btn btn-ghost"
+              class="gate-choice gate-choice--owner"
               onClick={() => router.navigate("/admin")}
             >
-              Je suis Alexandre
+              <span class="gate-choice-icon" aria-hidden="true">
+                <LockIcon size={20} />
+              </span>
+              <span class="gate-choice-copy">
+                <span class="gate-choice-title">Je suis Alexandre</span>
+                <span class="gate-choice-hint">
+                  Ouvrir l'espace gestion, sans aucun spoil
+                </span>
+              </span>
+              <ArrowRightIcon size={17} class="gate-choice-arrow" />
             </button>
           </div>
         </section>
