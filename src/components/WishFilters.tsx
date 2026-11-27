@@ -40,9 +40,11 @@ function useSlidingPill(track: () => unknown) {
     const next = { x: active.offsetLeft, w: active.offsetWidth };
     if (next.w <= 0) return;
     setPill((prev) => {
-      if (prev && !animate()) {
-        // Enable glide only after initial mount position has settled
-        requestAnimationFrame(() => setAnimate(true));
+      if (!prev && !animate()) {
+        // Enable glide after initial mount position is painted, so the very first click animates
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => setAnimate(true));
+        });
       }
       return next;
     });
@@ -225,13 +227,16 @@ export function BudgetFilter(props: {
     props.value ? rangeLabel(current()[0], current()[1]) : "Budget";
 
   const bars = createMemo(() => {
-    const counts = new Array<number>(BINS).fill(0);
+    const buckets: number[][] = Array.from({ length: BINS }, () => []);
     for (const price of props.prices) {
-      counts[Math.min(BINS - 1, Math.floor((price / props.ceiling) * BINS))]++;
+      buckets[Math.min(BINS - 1, Math.floor((price / props.ceiling) * BINS))].push(
+        price,
+      );
     }
-    const tallest = Math.max(1, ...counts);
-    return counts.map((count, i) => ({
-      height: count / tallest,
+    const tallest = Math.max(1, ...buckets.map((b) => b.length));
+    return buckets.map((bucket, i) => ({
+      height: bucket.length / tallest,
+      prices: bucket,
       from: (i * props.ceiling) / BINS,
       to: ((i + 1) * props.ceiling) / BINS,
     }));
@@ -287,7 +292,14 @@ export function BudgetFilter(props: {
                   <span
                     class={[
                       "price-bar",
-                      { "is-in": bar.to > current()[0] && bar.from < current()[1] },
+                      {
+                        "is-in":
+                          bar.prices.length > 0
+                            ? bar.prices.some(
+                                (p) => p >= current()[0] && p <= current()[1],
+                              )
+                            : bar.to > current()[0] && bar.from < current()[1],
+                      },
                     ]}
                     style={{ height: `${Math.max(8, bar.height * 100)}%` }}
                   />

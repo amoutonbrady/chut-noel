@@ -81,15 +81,11 @@ function saveViewMode(mode: ViewMode): void {
 let listTransitionSeq = 0;
 
 /**
- * Coordinates Solid 2 DOM flushing with the View Transitions API:
- * - "reorder": glides individual cards gently when sorting or filtering within the same layout.
- * - "switch": clean cross-dissolve of the collection when switching between List and Grid
- *   (avoids distorting wide horizontal rows into vertical cards).
+ * Smoothly glides cards when sorting or filtering within the same layout.
+ * Solid 2 batches signal updates asynchronously, so `flush()` commits the new DOM
+ * synchronously before the View Transition captures its "new" snapshot.
  */
-function runListTransition(
-  kind: "reorder" | "switch",
-  update: () => void,
-): void {
+function runReorderTransition(update: () => void): void {
   const reduce =
     typeof window !== "undefined" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -107,10 +103,9 @@ function runListTransition(
     return;
   }
   const seq = ++listTransitionSeq;
-  root.dataset.listTransition = kind;
+  root.dataset.listTransition = "reorder";
   const transition = document.startViewTransition(() => {
     update();
-    // Solid 2 batches signal writes asynchronously; flush synchronously before new snapshot
     flush();
   });
   void transition.finished.finally(() => {
@@ -236,7 +231,7 @@ function WishlistContent(props: WishlistContentProps) {
 
   const filtersActive = () => filter() !== "all" || budget() !== null;
   const resetFilters = () => {
-    runListTransition("reorder", () => {
+    runReorderTransition(() => {
       setFilter("all");
       setBudget(null);
     });
@@ -244,18 +239,19 @@ function WishlistContent(props: WishlistContentProps) {
 
   const handleFilterChange = (next: AvailabilityFilter) => {
     if (next === filter()) return;
-    runListTransition("reorder", () => setFilter(next));
+    runReorderTransition(() => setFilter(next));
   };
 
   const handleSortChange = (next: SortKey) => {
     if (next === sort()) return;
-    runListTransition("reorder", () => setSort(next));
+    runReorderTransition(() => setSort(next));
   };
 
   const handleViewChange = (mode: ViewMode) => {
     if (mode === viewMode()) return;
     saveViewMode(mode);
-    runListTransition("switch", () => setViewMode(mode));
+    // Instant crisp layout switch: avoids stretching portrait cards into wide rows
+    setViewMode(mode);
   };
 
   const targetExistingClaims = createMemo(() => {
