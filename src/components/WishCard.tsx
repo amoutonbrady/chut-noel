@@ -70,9 +70,18 @@ export function WishCard(props: WishCardProps) {
     return props.claims.filter((c) => c.id !== mine);
   });
 
-  const participantsLabel = createMemo(() =>
-    props.claims.map((c) => c.guestName?.trim() || "un proche").join(", "),
-  );
+  const participantsLabel = createMemo(() => {
+    const mine = myClaimEntry()?.claim.id;
+    return props.claims
+      .map((c) => (c.id === mine ? "toi" : c.guestName?.trim() || "un proche"))
+      .join(", ");
+  });
+
+  // My own solo reservation without notes: the badge already says it all
+  const showClaimInfo = () =>
+    !props.owner &&
+    isReserved() &&
+    !(myClaimEntry() && !isGroup() && notesFromGuests().length === 0);
 
   const notesFromGuests = createMemo(() =>
     props.claims
@@ -84,19 +93,60 @@ export function WishCard(props: WishCardProps) {
       })),
   );
 
+  const statusBadge = () => (
+    <Show
+      when={myClaimEntry()}
+      fallback={
+        <Show
+          when={isGroup()}
+          fallback={
+            <Show
+              when={isReserved()}
+              fallback={
+                <span class="badge badge--available">
+                  <CircleDotIcon size={13} />
+                  Disponible
+                </span>
+              }
+            >
+              <span class="badge badge--reserved">
+                <LockIcon size={13} />
+                Déjà réservé
+              </span>
+            </Show>
+          }
+        >
+          <span class="badge badge--group">
+            <UsersIcon size={13} />
+            Cadeau groupé{" "}
+            <span class="badge-count">({props.claims.length})</span>
+          </span>
+        </Show>
+      }
+    >
+      <span class="badge badge--mine">
+        <CheckIcon
+          size={13}
+          class={props.justReserved ? "check-draw" : undefined}
+        />
+        {isGroup() ? "Tu participes" : "Réservé par toi"}
+      </span>
+    </Show>
+  );
+
   return (
-    <article
+    <li
       class={[
-        "wish-card",
+        "wish-row",
         {
-          "wish-card--reserved":
+          "wish-row--reserved":
             !props.owner && isReserved() && !isGroup() && !myClaimEntry(),
-          "wish-card--mine": Boolean(myClaimEntry()),
-          "wish-card--celebrate": Boolean(props.justReserved),
+          "wish-row--mine": Boolean(myClaimEntry()),
+          "wish-row--celebrate": Boolean(props.justReserved),
         },
       ]}
     >
-      <div class="wish-media">
+      <div class="wish-thumb">
         <Show
           when={props.item.imageUrl && !imgFailed()}
           fallback={
@@ -119,49 +169,6 @@ export function WishCard(props: WishCardProps) {
             decoding="async"
             onError={() => setImgFailed(true)}
           />
-        </Show>
-
-        <Show when={!props.owner}>
-          <div class="wish-status-overlay">
-            <Show
-              when={myClaimEntry()}
-              fallback={
-                <Show
-                  when={isGroup()}
-                  fallback={
-                    <Show
-                      when={isReserved()}
-                      fallback={
-                        <span class="badge badge--available">
-                          <CircleDotIcon size={13} />
-                          Disponible
-                        </span>
-                      }
-                    >
-                      <span class="badge badge--reserved">
-                        <LockIcon size={13} />
-                        Déjà réservé
-                      </span>
-                    </Show>
-                  }
-                >
-                  <span class="badge badge--group">
-                    <UsersIcon size={13} />
-                    Cadeau groupé
-                    <span class="badge-count">({props.claims.length})</span>
-                  </span>
-                </Show>
-              }
-            >
-              <span class="badge badge--mine">
-                <CheckIcon
-                  size={13}
-                  class={props.justReserved ? "check-draw" : undefined}
-                />
-                {isGroup() ? "Tu participes" : "Réservé par toi"}
-              </span>
-            </Show>
-          </div>
         </Show>
       </div>
 
@@ -186,24 +193,25 @@ export function WishCard(props: WishCardProps) {
               )}
             </Show>
           </h3>
-
-          <Show when={props.item.priceHint || domain()}>
-            <div class="wish-meta">
-              <Show when={props.item.priceHint}>
-                {(price) => <span class="wish-price">{price()}</span>}
-              </Show>
-              <Show when={domain()}>
-                {(host) => <span class="wish-domain">{host()}</span>}
-              </Show>
-            </div>
-          </Show>
+          <Show when={!props.owner}>{statusBadge()}</Show>
         </div>
+
+        <Show when={props.item.priceHint || domain()}>
+          <div class="wish-meta">
+            <Show when={props.item.priceHint}>
+              {(price) => <span class="wish-price">{price()}</span>}
+            </Show>
+            <Show when={domain()}>
+              {(host) => <span class="wish-domain">{host()}</span>}
+            </Show>
+          </div>
+        </Show>
 
         <Show when={props.item.note}>
           {(note) => <p class="wish-note">{note()}</p>}
         </Show>
 
-        <Show when={!props.owner && isReserved()}>
+        <Show when={showClaimInfo()}>
           <div class="wish-claim-info">
             <p class="wish-participants">
               {isGroup() ? "Participent : " : "Réservé par "}
@@ -220,72 +228,72 @@ export function WishCard(props: WishCardProps) {
             </Show>
           </div>
         </Show>
-
-        <Show when={!props.owner}>
-          <div class="wish-actions">
-            <Show when={!isReserved()}>
-              <button
-                type="button"
-                class="btn btn-primary btn-sm"
-                disabled={props.busy}
-                onClick={() => props.onReserve(props.item, "solo")}
-              >
-                Réserver
-              </button>
-            </Show>
-
-            <Show when={isGroup() && !myClaimEntry()}>
-              <button
-                type="button"
-                class="btn btn-primary btn-sm"
-                disabled={props.busy}
-                onClick={() => props.onReserve(props.item, "group")}
-              >
-                <UsersIcon size={14} />
-                Participer
-              </button>
-            </Show>
-
-            <Show when={myClaimEntry()}>
-              {(mine) => (
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-sm"
-                  disabled={props.busy}
-                  aria-busy={props.busy ? "true" : undefined}
-                  onClick={() =>
-                    props.onCancelMine(
-                      props.item,
-                      mine().claim,
-                      mine().saved.cancelToken,
-                    )
-                  }
-                >
-                  {props.busy
-                    ? "Annulation…"
-                    : isGroup()
-                      ? "Ne plus participer"
-                      : "Annuler ma réservation"}
-                </button>
-              )}
-            </Show>
-
-            <Show when={otherClaims().length > 0}>
-              <button
-                type="button"
-                class="btn btn-ghost btn-sm"
-                disabled={props.busy}
-                onClick={() => props.onRequestRelease(props.item, otherClaims())}
-              >
-                {/* Only promise "available" when releasing really frees the item */}
-                {props.claims.length === 1 && !myClaimEntry()
-                  ? "Rendre disponible"
-                  : "Gérer les participants"}
-              </button>
-            </Show>
-          </div>
-        </Show>
       </div>
-    </article>
+
+      <Show when={!props.owner}>
+        <div class="wish-actions">
+          <Show when={!isReserved()}>
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              disabled={props.busy}
+              onClick={() => props.onReserve(props.item, "solo")}
+            >
+              Réserver
+            </button>
+          </Show>
+
+          <Show when={isGroup() && !myClaimEntry()}>
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              disabled={props.busy}
+              onClick={() => props.onReserve(props.item, "group")}
+            >
+              <UsersIcon size={14} />
+              Participer
+            </button>
+          </Show>
+
+          <Show when={myClaimEntry()}>
+            {(mine) => (
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                disabled={props.busy}
+                aria-busy={props.busy ? "true" : undefined}
+                onClick={() =>
+                  props.onCancelMine(
+                    props.item,
+                    mine().claim,
+                    mine().saved.cancelToken,
+                  )
+                }
+              >
+                {props.busy
+                  ? "Annulation…"
+                  : isGroup()
+                    ? "Ne plus participer"
+                    : "Annuler ma réservation"}
+              </button>
+            )}
+          </Show>
+
+          <Show when={otherClaims().length > 0}>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              disabled={props.busy}
+              onClick={() => props.onRequestRelease(props.item, otherClaims())}
+            >
+              {/* Only promise "available" when releasing really frees the item */}
+              {props.claims.length === 1 && !myClaimEntry()
+                ? "Rendre disponible"
+                : "Gérer les participants"}
+            </button>
+          </Show>
+        </div>
+      </Show>
+    </li>
   );
 }

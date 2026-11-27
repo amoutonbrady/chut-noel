@@ -330,7 +330,7 @@ function WishlistContent(props: WishlistContentProps) {
           </section>
         }
       >
-        <section class="wish-grid" aria-label="Envies">
+        <ul class="wish-list" aria-label="Envies">
           {/* Keyed by id: a refresh after reserving keeps each card mounted */}
           <For each={filteredItems()} keyed={(item) => item.id}>
             {(item) => (
@@ -352,7 +352,7 @@ function WishlistContent(props: WishlistContentProps) {
               />
             )}
           </For>
-        </section>
+        </ul>
       </Show>
 
       {/* Reserve / Participate dialog */}
@@ -593,9 +593,10 @@ function WishlistContent(props: WishlistContentProps) {
 const ListSkeleton = () => (
   <div class="skeleton-wrap" aria-busy="true" aria-label="Chargement de la liste">
     <div class="skeleton-hero" />
-    <div class="wish-grid">
-      <div class="skeleton-card" />
-      <div class="skeleton-card" />
+    <div class="wish-list">
+      <div class="skeleton-row" />
+      <div class="skeleton-row" />
+      <div class="skeleton-row" />
     </div>
   </div>
 );
@@ -707,7 +708,7 @@ function OwnerLoader(props: { token: string }) {
               </section>
             }
           >
-            <section class="wish-grid" aria-label="Mes envies">
+            <ul class="wish-list" aria-label="Mes envies">
               <For each={dataMemo().items} keyed={(item) => item.id}>
                 {(item) => (
                   <WishCard
@@ -721,7 +722,7 @@ function OwnerLoader(props: { token: string }) {
                   />
                 )}
               </For>
-            </section>
+            </ul>
           </Show>
         </div>
       </Loading>
