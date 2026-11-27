@@ -5,8 +5,8 @@ Liste de souhaits personnelle anti-spoil pour toute l'année, construite avec **
 ## Architecture
 
 - **Anti-spoil côté serveur** : les envies (`wishlist-items-*`) et les réservations (`wishlist-claims-*`) vivent dans deux stores Netlify Blobs séparés. L'API d'administration (`/api/admin/items`) n'importe et n'accède jamais au store des réservations.
-- **Accès public (`/`)** : consulte la liste, filtre par disponibilité, réserve en solo ou à plusieurs, et libère une réservation (avec jeton d'annulation local ou confirmation forcée).
-- **Gestion (`/admin`)** : protégée par `OWNER_TOKEN` (`Authorization: Bearer <token>`), avec ajout/édition/suppression et pré-remplissage automatique depuis une URL (`POST /api/scrape`).
+- **Liste (`/`)** : à la première visite, chaque appareil répond « Qui es-tu ? » avant tout chargement des réservations. Un proche (choix mémorisé, ou lien partagé `/?proche`) consulte, filtre, réserve en solo ou à plusieurs et libère une réservation. Un appareil connecté en gestion voit la liste sans aucun statut, même via `?proche`.
+- **Gestion (`/admin`)** : protégée par `OWNER_TOKEN` (`Authorization: Bearer <token>`), avec ajout/édition/suppression et pré-remplissage depuis une URL (`POST /api/scrape`) ou via le bookmarklet « Ma liste » (lit la page produit dans le navigateur, puis ouvre `/admin?add=<json>`).
 
 ## Configuration (`OWNER_TOKEN`)
 

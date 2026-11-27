@@ -13,6 +13,8 @@ import {
   scrapeProductUrl,
   validatePublicScrapeUrl,
 } from "../netlify/functions/_lib/scraper.mts";
+import { readAddParam } from "../src/lib/bookmarklet";
+import { stripShopSuffix } from "../src/shared/title";
 import {
   createMemoryBlobStore,
   getClaimsStoreName,
@@ -562,6 +564,36 @@ describe("Personal Wishlist Backend", () => {
           fnac,
         ).priceHint,
       ).toBe("59,90 €");
+    });
+
+    it("strips shop suffixes without cutting hyphenated words, and reads bookmarklet payloads", () => {
+      expect(stripShopSuffix("T-shirt Nike Sportswear", "www.nike.com")).toBe(
+        "T-shirt Nike Sportswear",
+      );
+      expect(stripShopSuffix("Sèche-cheveux Dyson Supersonic | Dyson", "www.dyson.fr")).toBe(
+        "Sèche-cheveux Dyson Supersonic",
+      );
+      expect(stripShopSuffix("Veste pluie MH500 - Decathlon", "www.decathlon.fr")).toBe(
+        "Veste pluie MH500",
+      );
+      expect(stripShopSuffix("Fnac : Informatique, livres", "www.fnac.com")).toBe(
+        "Fnac : Informatique, livres",
+      );
+
+      const payload = {
+        url: "https://www.amazon.fr/dp/2070612759",
+        title: "Le Petit Prince : Saint-Exupery: Amazon.fr: Livres",
+        image: 42,
+        price: "7,50€",
+      };
+      expect(readAddParam(`?add=${encodeURIComponent(JSON.stringify(payload))}`)).toEqual({
+        url: "https://www.amazon.fr/dp/2070612759",
+        title: "Le Petit Prince : Saint-Exupery",
+        imageUrl: "",
+        priceHint: "7,50€",
+      });
+      expect(readAddParam("?add=%7Bnot-json")).toBeNull();
+      expect(readAddParam("")).toBeNull();
     });
 
     it("blocks private, loopback, metadata, local, internal, and non-http URLs (SSRF)", async () => {

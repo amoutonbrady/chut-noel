@@ -7,9 +7,13 @@ export function stripShopSuffix(title: string, hostname: string): string {
   if (brand.length < 3 || !/^[a-z0-9-]+$/.test(brand)) {
     return title;
   }
-  // Cut at the last separator before the brand, keeping everything ahead of it
-  const match = title.match(
-    new RegExp(`^(.+?)\\s*[|:–—-]\\s*[^|:–—-]*\\b${brand}\\b`, "i"),
-  );
-  return match?.[1].trim() || title;
+  // Separators kept at odd indexes; dashes only count with spaces around ("T-shirt" stays whole)
+  const parts = title.split(/(\s+[-–—]\s+|\s*[|:]\s*)/);
+  const brandRegex = new RegExp(`\\b${brand}\\b`, "i");
+  for (let i = 2; i < parts.length; i += 2) {
+    if (brandRegex.test(parts[i])) {
+      return parts.slice(0, i - 1).join("").trim() || title;
+    }
+  }
+  return title;
 }

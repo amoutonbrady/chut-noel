@@ -13,9 +13,11 @@ function grab(origin: string): void {
 
   let product: any;
   const walk = (node: any): void => {
-    if (!node || typeof node !== "object" || product) return;
+    if (!node || typeof node !== "object") return;
     if (Array.isArray(node)) return node.forEach(walk);
-    if (/product|book|videogame/i.test(([] as unknown[]).concat(node["@type"]).join(" "))) product = node;
+    const isProduct = /product|book|videogame/i.test(([] as unknown[]).concat(node["@type"]).join(" "));
+    // Decathlon lists an empty ProductGroup first: prefer the node that carries the offer
+    if (isProduct && (!product || (!product.offers && node.offers))) product = node;
     walk(node["@graph"]);
     walk(node.mainEntity);
   };
@@ -56,17 +58,18 @@ function grab(origin: string): void {
 
   const ldImage = first(product?.image);
   const landing = q("#landingImage");
+  // `||` not `??`: empty attributes (content="") must fall through too
   const rawImage =
-    meta("og:image") ??
-    (typeof ldImage === "string" ? ldImage : ldImage?.url) ??
-    landing?.getAttribute("data-old-hires") ??
+    meta("og:image") ||
+    (typeof ldImage === "string" ? ldImage : ldImage?.url) ||
+    landing?.getAttribute("data-old-hires") ||
     landing?.getAttribute("src");
   const canonical = q('link[rel="canonical"]')?.getAttribute("href");
   const canonicalUrl = canonical ? new URL(canonical, location.href) : null;
 
   const data = {
     url: canonicalUrl?.host === location.host ? canonicalUrl.href : location.href,
-    title: meta("og:title") ?? product?.name ?? document.title,
+    title: meta("og:title") || product?.name || document.title,
     image: rawImage ? new URL(rawImage, location.href).href : undefined,
     price,
   };
