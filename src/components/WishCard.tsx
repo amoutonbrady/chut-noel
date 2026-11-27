@@ -123,6 +123,8 @@ export function WishCard(props: WishCardProps) {
             src={props.item.imageUrl}
             alt={props.item.title}
             class="wish-img"
+            // Shops block hotlinking by Referer; without one most of them serve the image
+            referrerpolicy="no-referrer"
             loading="lazy"
             decoding="async"
             onError={() => setImgFailed(true)}

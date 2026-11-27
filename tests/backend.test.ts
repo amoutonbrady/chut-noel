@@ -9,6 +9,7 @@ import {
   extractMetadataFromHtml,
   guessTitleFromUrl,
   isBlockedHostname,
+  parsePriceNumber,
   scrapeProductUrl,
   validatePublicScrapeUrl,
 } from "../netlify/functions/_lib/scraper.mts";
@@ -516,6 +517,53 @@ describe("Personal Wishlist Backend", () => {
       });
     });
 
+    it("parses separators, microdata, Amazon images and shop title suffixes", () => {
+      expect(parsePriceNumber("1.299,99")).toBe(1299.99);
+      expect(parsePriceNumber("1,299.99")).toBe(1299.99);
+      expect(parsePriceNumber("1 299,99")).toBe(1299.99);
+      expect(parsePriceNumber("149.9")).toBe(149.9);
+      expect(parsePriceNumber("1.299")).toBe(1299);
+      expect(parsePriceNumber(12.5)).toBe(12.5);
+
+      // Real Amazon shape: no og:image, image in data-old-hires, shipping threshold in text
+      expect(
+        extractMetadataFromHtml(
+          `<title>LE PETIT PRINCE : Saint-Exupery, Antoine de: Amazon.fr: Livres</title>
+           <p>Livraison gratuite dès 10 €</p>
+           <img id="landingImage" data-old-hires="https://m.media-amazon.com/images/I/710.jpg">`,
+          new URL("https://www.amazon.fr/dp/2070612759"),
+        ),
+      ).toEqual({
+        title: "LE PETIT PRINCE : Saint-Exupery, Antoine de",
+        imageUrl: "https://m.media-amazon.com/images/I/710.jpg",
+        siteName: "amazon.fr",
+      });
+
+      const fnac = new URL("https://www.fnac.com/a1/casque");
+      expect(
+        extractMetadataFromHtml(
+          `<title>Casque WH-1000XM5 | Fnac</title>
+           <link rel="image_src" href="/casque.jpg">
+           <span itemprop="price" content="1.299,99">1 299,99 €</span>
+           <meta itemprop="priceCurrency" content="EUR">`,
+          fnac,
+        ),
+      ).toEqual({
+        title: "Casque WH-1000XM5",
+        imageUrl: "https://www.fnac.com/casque.jpg",
+        priceHint: "1299,99 €",
+        siteName: "fnac.com",
+      });
+
+      expect(
+        extractMetadataFromHtml(
+          `<script type="application/ld+json">{"@type":"Product","name":"X",
+            "offers":{"priceSpecification":{"price":59.9,"priceCurrency":"EUR"}}}</script>`,
+          fnac,
+        ).priceHint,
+      ).toBe("59,90 €");
+    });
+
     it("blocks private, loopback, metadata, local, internal, and non-http URLs (SSRF)", async () => {
       const blockedUrls = [
         "http://localhost/admin",
@@ -607,7 +655,7 @@ describe("Personal Wishlist Backend", () => {
       const stream = new ReadableStream<Uint8Array>({
         pull(controller) {
           if (chunksSent === 0) controller.enqueue(new TextEncoder().encode(head));
-          else if (chunksSent < 20) controller.enqueue(chunk);
+          else if (chunksSent < 60) controller.enqueue(chunk);
           else controller.close();
           chunksSent += 1;
         },
@@ -625,7 +673,8 @@ describe("Personal Wishlist Backend", () => {
       if (!hugeRes.blocked) {
         expect(hugeRes.data.title).toBe("Objet Grand Format");
       }
-      expect(chunksSent).toBeLessThan(10);
+      // 2 MB cap = 32 chunks of 64 KB: the 3.75 MB stream must not be read to the end
+      expect(chunksSent).toBeLessThan(40);
     });
   });
 });

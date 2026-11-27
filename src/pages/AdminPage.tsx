@@ -21,6 +21,7 @@ import {
   setOwnerToken,
   updateAdminItem,
 } from "../lib/api";
+import { bookmarkletHref, readAddParam } from "../lib/bookmarklet";
 import {
   AlertIcon,
   CopyIcon,
@@ -99,8 +100,10 @@ export function AdminPage() {
   const [loginBusy, setLoginBusy] = createSignal(false);
   const [loginError, setLoginError] = createSignal<string | null>(null);
 
-  // Create form
-  const [draft, setDraft] = createSignal<ItemDraft>(emptyDraft());
+  // Create form, prefilled by the bookmarklet (`/admin?add=<json>`)
+  const added = readAddParam(window.location.search);
+  if (added) window.history.replaceState(null, "", "/admin");
+  const [draft, setDraft] = createSignal<ItemDraft>({ ...emptyDraft(), ...added });
   const [scraping, setScraping] = createSignal(false);
   const [scrapeNotice, setScrapeNotice] = createSignal<string | null>(null);
   const [createBusy, setCreateBusy] = createSignal(false);
@@ -503,6 +506,20 @@ export function AdminPage() {
             <h2 id="add-wish-heading" class="panel-title">
               Ajouter une envie
             </h2>
+            <p class="field-hint">
+              Astuce : glisse{" "}
+              <a
+                class="btn btn-secondary btn-sm"
+                href={bookmarkletHref(window.location.origin)}
+                title="Glisse ce bouton dans ta barre de favoris"
+                onClick={(e) => e.preventDefault()}
+              >
+                <PlusIcon size={14} />
+                <span>Ma liste</span>
+              </a>{" "}
+              dans ta barre de favoris, puis clique dessus sur une page produit
+              (Amazon, Decathlon…) : ce formulaire se remplit tout seul.
+            </p>
 
             <form class="stack" onSubmit={(e) => void handleCreateItem(e)}>
               <div class="field">
@@ -668,6 +685,7 @@ export function AdminPage() {
                               <img
                                 src={src()}
                                 alt=""
+                                referrerpolicy="no-referrer"
                                 loading="lazy"
                                 decoding="async"
                               />

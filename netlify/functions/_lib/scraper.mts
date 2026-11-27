@@ -1,6 +1,8 @@
 import type { ScrapedMetadata } from "../../../src/shared/types";
+import { stripShopSuffix } from "../../../src/shared/title";
 
-const MAX_RESPONSE_BYTES = 350 * 1024;
+// Amazon product pages weigh ~2 MB and put the main image ~460 KB in
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 5_000;
 const MAX_REDIRECTS = 4;
 
@@ -422,13 +424,29 @@ function resolvePublicImageUrl(raw: string | undefined, baseUrl: URL): string | 
   }
 }
 
-function formatPriceHint(rawPrice: string | number, rawCurrency?: string): string | undefined {
-  const str = String(rawPrice)
-    .trim()
-    .replace(/\u00a0|\s/g, "")
-    .replace(",", ".");
+/** Parses "1.299,99", "1,299.99", "1 299,99", "149.9" or "1.299" (thousands) into a number. */
+export function parsePriceNumber(rawPrice: string | number): number {
+  if (typeof rawPrice === "number") {
+    return rawPrice;
+  }
+  let str = rawPrice.trim().replace(/[\s\u00a0\u202f]/g, "");
+  const lastDot = str.lastIndexOf(".");
+  const lastComma = str.lastIndexOf(",");
+  if (lastDot !== -1 && lastComma !== -1) {
+    // Both separators: the last one is the decimal mark
+    const thousands = lastDot > lastComma ? "," : ".";
+    str = str.split(thousands).join("").replace(",", ".");
+  } else if (lastDot !== -1 || lastComma !== -1) {
+    const parts = str.split(lastDot !== -1 ? "." : ",");
+    // Several separators, or exactly 3 digits after a single one, means thousands
+    const isThousands = parts.length > 2 || parts[parts.length - 1].length === 3;
+    str = parts.join(isThousands ? "" : ".");
+  }
+  return Number.parseFloat(str);
+}
 
-  const numeric = Number.parseFloat(str);
+function formatPriceHint(rawPrice: string | number, rawCurrency?: string): string | undefined {
+  const numeric = parsePriceNumber(rawPrice);
   if (!Number.isFinite(numeric) || numeric <= 0 || numeric > 1_000_000) {
     return undefined;
   }
@@ -452,31 +470,34 @@ function formatPriceHint(rawPrice: string | number, rawCurrency?: string): strin
 
 function parseMetaTags(html: string): Map<string, string> {
   const metas = new Map<string, string>();
-  const metaTagRegex = /<meta\b([^>]*?)\/?>/gi;
   const attrRegex = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
 
-  let tagMatch: RegExpExecArray | null;
-  while ((tagMatch = metaTagRegex.exec(html)) !== null) {
-    const attrsText = tagMatch[1];
-    let key: string | undefined;
-    let content: string | undefined;
-
-    attrRegex.lastIndex = 0;
-    let attrMatch: RegExpExecArray | null;
-    while ((attrMatch = attrRegex.exec(attrsText)) !== null) {
-      const attrName = attrMatch[1].toLowerCase();
-      const attrVal = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4] ?? "";
-      if (attrName === "property" || attrName === "name" || attrName === "itemprop") {
-        key = attrVal.trim().toLowerCase();
-      } else if (attrName === "content") {
-        content = attrVal.trim();
+  const collect = (tagRegex: RegExp) => {
+    let tagMatch: RegExpExecArray | null;
+    while ((tagMatch = tagRegex.exec(html)) !== null) {
+      const attrs: Record<string, string> = {};
+      attrRegex.lastIndex = 0;
+      let attrMatch: RegExpExecArray | null;
+      while ((attrMatch = attrRegex.exec(tagMatch[1])) !== null) {
+        attrs[attrMatch[1].toLowerCase()] ??= (attrMatch[2] ?? attrMatch[3] ?? attrMatch[4] ?? "").trim();
+      }
+      const key = (
+        attrs.property ||
+        attrs.name ||
+        attrs.itemprop ||
+        (attrs.rel?.toLowerCase() === "image_src" ? "image_src" : "")
+      ).toLowerCase();
+      const content = attrs.content || attrs.href || attrs.src;
+      if (key && content && !metas.has(key)) {
+        metas.set(key, content);
       }
     }
+  };
 
-    if (key && content && !metas.has(key)) {
-      metas.set(key, content);
-    }
-  }
+  collect(/<meta\b([^>]*?)\/?>/gi);
+  // Microdata on any element, e.g. <span itemprop="price" content="49.90"> or <img itemprop="image" src>
+  collect(/<[a-z][a-z0-9]*\b([^>]*\bitemprop\s*=[^>]*?)\/?>/gi);
+  collect(/<link\b([^>]*\brel\s*=\s*["']?image_src\b[^>]*?)\/?>/gi);
 
   return metas;
 }
@@ -525,6 +546,10 @@ function extractPriceFromJsonLdOffers(offers: unknown): string | undefined {
     if (typeof rawPrice === "number" || typeof rawPrice === "string") {
       const formatted = formatPriceHint(rawPrice, rawCurrency);
       if (formatted) return formatted;
+    }
+    if (obj.priceSpecification) {
+      const found = extractPriceFromJsonLdOffers(obj.priceSpecification);
+      if (found) return found;
     }
     if (obj.offers) {
       return extractPriceFromJsonLdOffers(obj.offers);
@@ -602,31 +627,6 @@ function parseJsonLd(html: string): JsonLdExtracted {
   return result;
 }
 
-function extractPriceFromHtmlText(html: string): string | undefined {
-  const withoutScripts = html
-    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ");
-
-  const decoded = decodeHtmlEntities(withoutScripts);
-
-  const afterSymbol = decoded.match(
-    /(?:^|[^\d])((?:\d{1,3}(?:[\s\u00a0]\d{3})+|\d{1,5})(?:[.,]\d{2})?)\s?(?:€|EUR\b)/i,
-  );
-  if (afterSymbol) {
-    return formatPriceHint(afterSymbol[1], "EUR");
-  }
-
-  const beforeSymbol = decoded.match(
-    /(?:€|EUR\b)\s?((?:\d{1,3}(?:[\s\u00a0]\d{3})+|\d{1,5})(?:[.,]\d{2})?)(?!\d)/i,
-  );
-  if (beforeSymbol) {
-    return formatPriceHint(beforeSymbol[1], "EUR");
-  }
-
-  return undefined;
-}
-
 export function extractMetadataFromHtml(
   html: string,
   baseUrl: URL,
@@ -642,29 +642,39 @@ export function extractMetadataFromHtml(
   const titleTagMatch = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
   const titleTag = titleTagMatch ? titleTagMatch[1] : undefined;
 
-  const title =
-    cleanExtractedText(metas.get("og:title"), 160) ??
-    cleanExtractedText(metas.get("twitter:title"), 160) ??
-    cleanExtractedText(jsonLd.name, 160) ??
-    cleanExtractedText(titleTag, 160);
+  const rawTitle =
+    cleanExtractedText(metas.get("og:title"), 400) ??
+    cleanExtractedText(metas.get("twitter:title"), 400) ??
+    cleanExtractedText(jsonLd.name, 400) ??
+    cleanExtractedText(titleTag, 400);
+  const title = rawTitle
+    ? stripShopSuffix(rawTitle, baseUrl.hostname).slice(0, 160).trim()
+    : undefined;
 
+  // Amazon has no og:image: the main product image sits in data-old-hires
+  const amazonImage = html.match(/\bdata-old-hires\s*=\s*"([^"]+)"/i)?.[1];
   const imageUrl =
     resolvePublicImageUrl(metas.get("og:image:secure_url"), baseUrl) ??
     resolvePublicImageUrl(metas.get("og:image"), baseUrl) ??
     resolvePublicImageUrl(metas.get("twitter:image"), baseUrl) ??
     resolvePublicImageUrl(metas.get("twitter:image:src"), baseUrl) ??
-    resolvePublicImageUrl(jsonLd.image, baseUrl);
+    resolvePublicImageUrl(jsonLd.image, baseUrl) ??
+    resolvePublicImageUrl(metas.get("image"), baseUrl) ??
+    resolvePublicImageUrl(metas.get("image_src"), baseUrl) ??
+    resolvePublicImageUrl(amazonImage, baseUrl);
 
   const metaPriceAmount =
-    metas.get("product:price:amount") ?? metas.get("og:price:amount");
+    metas.get("product:price:amount") ?? metas.get("og:price:amount") ?? metas.get("price");
   const metaPriceCurrency =
-    metas.get("product:price:currency") ?? metas.get("og:price:currency");
+    metas.get("product:price:currency") ??
+    metas.get("og:price:currency") ??
+    metas.get("pricecurrency");
   const metaPrice = metaPriceAmount
     ? formatPriceHint(metaPriceAmount, metaPriceCurrency)
     : undefined;
 
-  const priceHint =
-    jsonLd.priceHint ?? metaPrice ?? extractPriceFromHtmlText(html);
+  // No guessing from page text: the first "€" is often a shipping threshold, no price beats a wrong one
+  const priceHint = jsonLd.priceHint ?? metaPrice;
 
   const siteName =
     cleanExtractedText(metas.get("og:site_name"), 80) ??
