@@ -13,20 +13,28 @@ export function parsePrice(hint?: string): number | null {
   return match ? Number(match[0].replace(",", ".")) : null;
 }
 
-export type BudgetKey = "all" | "lt25" | "25to50" | "50to100" | "gte100";
+/** Inclusive [min, max] in euros. */
+export type PriceRange = readonly [number, number];
 
-export const BUDGETS: { key: BudgetKey; label: string; min: number; max: number }[] = [
-  { key: "all", label: "Tous les budgets", min: 0, max: Infinity },
-  { key: "lt25", label: "Moins de 25 €", min: 0, max: 25 },
-  { key: "25to50", label: "25 à 50 €", min: 25, max: 50 },
-  { key: "50to100", label: "50 à 100 €", min: 50, max: 100 },
-  { key: "gte100", label: "100 € et plus", min: 100, max: Infinity },
+/** Slider ceiling: the highest price rounded up to a tidy step, never below 50 €. */
+export function priceCeiling(hints: (string | undefined)[]): number {
+  const prices = hints.map(parsePrice).filter((p): p is number => p !== null);
+  const max = Math.max(0, ...prices);
+  const step = max > 500 ? 100 : max > 100 ? 50 : 10;
+  return Math.max(50, Math.ceil(max / step) * step);
+}
+
+/** One-tap ranges shown under the slider; the open end is clamped to the ceiling. */
+export const PRICE_PRESETS: { label: string; range: PriceRange }[] = [
+  { label: "Jusqu'à 25 €", range: [0, 25] },
+  { label: "25 – 50 €", range: [25, 50] },
+  { label: "50 – 100 €", range: [50, 100] },
+  { label: "100 € et plus", range: [100, Infinity] },
 ];
 
-/** Items without a readable price only show under "all". */
-export function inBudget(hint: string | undefined, key: BudgetKey): boolean {
-  if (key === "all") return true;
-  const range = BUDGETS.find((b) => b.key === key);
+/** null = no price filter, unpriced items included. A set range keeps priced items only. */
+export function inPriceRange(hint: string | undefined, range: PriceRange | null): boolean {
+  if (!range) return true;
   const price = parsePrice(hint);
-  return Boolean(range) && price !== null && price >= range!.min && price < range!.max;
+  return price !== null && price >= range[0] && price <= range[1];
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inBudget, parsePrice } from "../src/lib/price";
+import { inPriceRange, parsePrice, priceCeiling } from "../src/lib/price";
 
 describe("parsePrice", () => {
   it.each([
@@ -23,16 +23,28 @@ describe("parsePrice", () => {
   });
 });
 
-describe("inBudget", () => {
-  it("uses [min, max) ranges", () => {
-    expect(inBudget("25 €", "lt25")).toBe(false);
-    expect(inBudget("25 €", "25to50")).toBe(true);
-    expect(inBudget("99.9 €", "50to100")).toBe(true);
-    expect(inBudget("100 €", "gte100")).toBe(true);
+describe("priceCeiling", () => {
+  it("rounds the highest price up to a tidy step", () => {
+    expect(priceCeiling(["42 €", "12 €"])).toBe(50);
+    expect(priceCeiling(["99.9 €"])).toBe(100);
+    expect(priceCeiling(["149 €"])).toBe(150);
+    expect(priceCeiling(["1 299 €"])).toBe(1300);
   });
 
-  it("keeps unpriced items only under all", () => {
-    expect(inBudget(undefined, "all")).toBe(true);
-    expect(inBudget(undefined, "lt25")).toBe(false);
+  it("never goes below 50 €, even without prices", () => {
+    expect(priceCeiling([undefined, "selon taille"])).toBe(50);
+  });
+});
+
+describe("inPriceRange", () => {
+  it("uses inclusive bounds", () => {
+    expect(inPriceRange("25 €", [0, 25])).toBe(true);
+    expect(inPriceRange("25 €", [25, 50])).toBe(true);
+    expect(inPriceRange("50,01 €", [25, 50])).toBe(false);
+  });
+
+  it("keeps unpriced items only without a range", () => {
+    expect(inPriceRange(undefined, null)).toBe(true);
+    expect(inPriceRange(undefined, [0, 100])).toBe(false);
   });
 });

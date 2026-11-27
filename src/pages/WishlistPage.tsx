@@ -30,11 +30,16 @@ import {
 } from "../lib/api";
 import type { SavedClaimToken } from "../lib/api";
 import { RouterContext } from "../lib/router";
-import { BUDGETS, inBudget, parsePrice } from "../lib/price";
-import type { BudgetKey } from "../lib/price";
+import { inPriceRange, parsePrice, priceCeiling } from "../lib/price";
+import type { PriceRange } from "../lib/price";
+import {
+  AvailabilityToggle,
+  BudgetFilter,
+  SortSelect,
+} from "../components/WishFilters";
+import type { AvailabilityFilter, SortKey } from "../components/WishFilters";
 import {
   AlertIcon,
-  ChevronDownIcon,
   GiftIcon,
   PencilIcon,
   ShieldIcon,
@@ -43,16 +48,6 @@ import {
 import { ModalDialog } from "../components/ModalDialog";
 import { ToastContext } from "../components/ToastHost";
 import { WishCard } from "../components/WishCard";
-
-type FilterMode = "all" | "available" | "reserved";
-type SortKey = "list" | "recent" | "price-asc" | "price-desc";
-
-const SORTS: { key: SortKey; label: string }[] = [
-  { key: "list", label: "Ordre de la liste" },
-  { key: "recent", label: "Ajouts récents" },
-  { key: "price-asc", label: "Prix croissant" },
-  { key: "price-desc", label: "Prix décroissant" },
-];
 
 // Unpriced items always go last when sorting by price
 function sortItems(list: WishItem[], key: SortKey): WishItem[] {
@@ -83,8 +78,8 @@ interface WishlistContentProps {
 function WishlistContent(props: WishlistContentProps) {
   const toast = useContext(ToastContext);
 
-  const [filter, setFilter] = createSignal<FilterMode>("all");
-  const [budget, setBudget] = createSignal<BudgetKey>("all");
+  const [filter, setFilter] = createSignal<AvailabilityFilter>("all");
+  const [budget, setBudget] = createSignal<PriceRange | null>(null);
   const [sort, setSort] = createSignal<SortKey>("list");
   const [myTokens, setMyTokens] = createSignal<SavedClaimToken[]>(
     getSavedClaimTokens(),
@@ -118,9 +113,16 @@ function WishlistContent(props: WishlistContentProps) {
   const items = createMemo(() => props.data.items);
   const claimsByItem = createMemo(() => props.data.claimsByItem);
 
+  const prices = createMemo(() =>
+    items()
+      .map((item) => parsePrice(item.priceHint))
+      .filter((p): p is number => p !== null),
+  );
+  const ceiling = createMemo(() => priceCeiling(items().map((item) => item.priceHint)));
+
   // Budget narrows first, so the availability counts match what is shown
   const budgetItems = createMemo(() =>
-    items().filter((item) => inBudget(item.priceHint, budget())),
+    items().filter((item) => inPriceRange(item.priceHint, budget())),
   );
 
   const reservedCount = createMemo(
@@ -144,10 +146,10 @@ function WishlistContent(props: WishlistContentProps) {
     return sortItems(list, sort());
   });
 
-  const filtersActive = () => filter() !== "all" || budget() !== "all";
+  const filtersActive = () => filter() !== "all" || budget() !== null;
   const resetFilters = () => {
     setFilter("all");
-    setBudget("all");
+    setBudget(null);
   };
 
   const targetExistingClaims = createMemo(() => {
@@ -328,12 +330,6 @@ function WishlistContent(props: WishlistContentProps) {
     };
   };
 
-  const filters: { value: FilterMode; label: string; count: () => number }[] = [
-    { value: "all", label: "Toutes", count: () => budgetItems().length },
-    { value: "available", label: "Disponibles", count: availableCount },
-    { value: "reserved", label: "Réservées", count: reservedCount },
-  ];
-
   return (
     <div class="wishlist-view">
       <section class="hero reveal-soft">
@@ -346,49 +342,25 @@ function WishlistContent(props: WishlistContentProps) {
 
       <Show when={items().length > 0}>
         <div class="toolbar reveal-soft">
-          <div class="segmented" role="group" aria-label="Filtrer par disponibilité">
-            <For each={filters}>
-              {(f) => (
-                <button
-                  type="button"
-                  class={["segmented-btn", { "is-active": filter() === f.value }]}
-                  aria-pressed={filter() === f.value ? "true" : "false"}
-                  onClick={() => setFilter(f.value)}
-                >
-                  <span>{f.label}</span>
-                  <span class="segmented-count">{f.count()}</span>
-                </button>
-              )}
-            </For>
-          </div>
-
-          <div class="toolbar-selects">
-            <div class={["select-wrap", { "is-active": budget() !== "all" }]}>
-              <select
-                class="select"
-                aria-label="Budget"
-                value={budget()}
-                onChange={(e) => setBudget(e.currentTarget.value as BudgetKey)}
-              >
-                <For each={BUDGETS}>
-                  {(b) => <option value={b.key}>{b.label}</option>}
-                </For>
-              </select>
-              <ChevronDownIcon size={14} class="select-chevron" />
-            </div>
-            <div class={["select-wrap", { "is-active": sort() !== "list" }]}>
-              <select
-                class="select"
-                aria-label="Trier"
-                value={sort()}
-                onChange={(e) => setSort(e.currentTarget.value as SortKey)}
-              >
-                <For each={SORTS}>
-                  {(s) => <option value={s.key}>{s.label}</option>}
-                </For>
-              </select>
-              <ChevronDownIcon size={14} class="select-chevron" />
-            </div>
+          <AvailabilityToggle
+            value={filter()}
+            counts={{
+              all: budgetItems().length,
+              available: availableCount(),
+              reserved: reservedCount(),
+            }}
+            onChange={setFilter}
+          />
+          <div class="toolbar-filters">
+            <BudgetFilter
+              value={budget()}
+              ceiling={ceiling()}
+              prices={prices()}
+              matchCount={budgetItems().length}
+              unpricedCount={items().length - prices().length}
+              onChange={setBudget}
+            />
+            <SortSelect value={sort()} onChange={setSort} />
           </div>
         </div>
       </Show>

@@ -1,10 +1,12 @@
 import { createMemo, createSignal, Show } from "solid-js";
 import type { ClaimMode, PublicClaim, WishItem } from "../shared/types";
 import { extractDomain } from "../lib/api";
+import { itemDates } from "../lib/dates";
 import type { SavedClaimToken } from "../lib/api";
 import {
   CheckIcon,
   CircleDotIcon,
+  ClockIcon,
   ExternalLinkIcon,
   LockIcon,
   UsersIcon,
@@ -44,6 +46,15 @@ export function WishCard(props: WishCardProps) {
     void props.item.imageUrl;
     return false;
   });
+
+  const dates = () => itemDates(props.item.createdAt, props.item.updatedAt);
+  const fullDates = () => {
+    const long = (iso: string) =>
+      new Date(iso).toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short" });
+    const added = `Ajoutée le ${long(props.item.createdAt)}`;
+    const edited = Date.parse(props.item.updatedAt) - Date.parse(props.item.createdAt) > 60_000;
+    return edited ? `${added}, modifiée le ${long(props.item.updatedAt)}` : added;
+  };
 
   const domain = createMemo(
     () => props.item.siteName || extractDomain(props.item.url),
@@ -193,14 +204,11 @@ export function WishCard(props: WishCardProps) {
               )}
             </Show>
           </h3>
-          <Show when={!props.owner}>{statusBadge()}</Show>
         </div>
 
-        <Show when={props.item.priceHint || domain()}>
+        <Show when={!props.owner || domain()}>
           <div class="wish-meta">
-            <Show when={props.item.priceHint}>
-              {(price) => <span class="wish-price">{price()}</span>}
-            </Show>
+            <Show when={!props.owner}>{statusBadge()}</Show>
             <Show when={domain()}>
               {(host) => <span class="wish-domain">{host()}</span>}
             </Show>
@@ -228,69 +236,85 @@ export function WishCard(props: WishCardProps) {
             </Show>
           </div>
         </Show>
+
+        <Show when={dates()}>
+          <p class="wish-dates" title={fullDates()}>
+            <ClockIcon size={12} />
+            {dates()}
+          </p>
+        </Show>
       </div>
 
-      <Show when={!props.owner}>
-        <div class="wish-actions">
-          <Show when={!isReserved()}>
-            <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              disabled={props.busy}
-              onClick={() => props.onReserve(props.item, "solo")}
-            >
-              Réserver
-            </button>
+      {/* Price and the main action sit on the right, where the eye ends a row */}
+      <Show when={props.item.priceHint || !props.owner}>
+        <div class="wish-aside">
+          <Show when={props.item.priceHint}>
+            {(price) => <span class="wish-price">{price()}</span>}
           </Show>
 
-          <Show when={isGroup() && !myClaimEntry()}>
-            <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              disabled={props.busy}
-              onClick={() => props.onReserve(props.item, "group")}
-            >
-              <UsersIcon size={14} />
-              Participer
-            </button>
-          </Show>
+          <Show when={!props.owner}>
+            <div class="wish-actions">
+              <Show when={!isReserved()}>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  disabled={props.busy}
+                  onClick={() => props.onReserve(props.item, "solo")}
+                >
+                  Réserver
+                </button>
+              </Show>
 
-          <Show when={myClaimEntry()}>
-            {(mine) => (
-              <button
-                type="button"
-                class="btn btn-secondary btn-sm"
-                disabled={props.busy}
-                aria-busy={props.busy ? "true" : undefined}
-                onClick={() =>
-                  props.onCancelMine(
-                    props.item,
-                    mine().claim,
-                    mine().saved.cancelToken,
-                  )
-                }
-              >
-                {props.busy
-                  ? "Annulation…"
-                  : isGroup()
-                    ? "Ne plus participer"
-                    : "Annuler ma réservation"}
-              </button>
-            )}
-          </Show>
+              <Show when={isGroup() && !myClaimEntry()}>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  disabled={props.busy}
+                  onClick={() => props.onReserve(props.item, "group")}
+                >
+                  <UsersIcon size={14} />
+                  Participer
+                </button>
+              </Show>
 
-          <Show when={otherClaims().length > 0}>
-            <button
-              type="button"
-              class="btn btn-ghost btn-sm"
-              disabled={props.busy}
-              onClick={() => props.onRequestRelease(props.item, otherClaims())}
-            >
-              {/* Only promise "available" when releasing really frees the item */}
-              {props.claims.length === 1 && !myClaimEntry()
-                ? "Rendre disponible"
-                : "Gérer les participants"}
-            </button>
+              <Show when={myClaimEntry()}>
+                {(mine) => (
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    disabled={props.busy}
+                    aria-busy={props.busy ? "true" : undefined}
+                    onClick={() =>
+                      props.onCancelMine(
+                        props.item,
+                        mine().claim,
+                        mine().saved.cancelToken,
+                      )
+                    }
+                  >
+                    {props.busy
+                      ? "Annulation…"
+                      : isGroup()
+                        ? "Ne plus participer"
+                        : "Annuler ma réservation"}
+                  </button>
+                )}
+              </Show>
+
+              <Show when={otherClaims().length > 0}>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  disabled={props.busy}
+                  onClick={() => props.onRequestRelease(props.item, otherClaims())}
+                >
+                  {/* Only promise "available" when releasing really frees the item */}
+                  {props.claims.length === 1 && !myClaimEntry()
+                    ? "Rendre disponible"
+                    : "Gérer les participants"}
+                </button>
+              </Show>
+            </div>
           </Show>
         </div>
       </Show>

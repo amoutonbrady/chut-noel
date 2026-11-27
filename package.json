@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@kobalte/core": "2.0.0-alpha.5",
     "@netlify/blobs": "^11.1.11",
     "@netlify/functions": "^6.1.2",
     "@solidjs/web": "^2.0.4",

@@ -156,6 +156,64 @@ export function SparkleLinkIcon(props: IconProps) {
   );
 }
 
+export function ListIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 14)} class={props.class}>
+      <path d="M3 6h.01M3 12h.01M3 18h.01M8 6h13M8 12h13M8 18h13" />
+    </svg>
+  );
+}
+
+export function WalletIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 15)} class={props.class}>
+      <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" />
+      <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" />
+    </svg>
+  );
+}
+
+export function ArrowUpDownIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 15)} class={props.class}>
+      <path d="m21 16-4 4-4-4M17 20V4M3 8l4-4 4 4M7 4v16" />
+    </svg>
+  );
+}
+
+export function ListOrderedIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 15)} class={props.class}>
+      <path d="M10 12h11M10 18h11M10 6h11M4 10h2M4 6h1v4M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
+    </svg>
+  );
+}
+
+export function ClockIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 15)} class={props.class}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+export function ArrowUpNarrowWideIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 15)} class={props.class}>
+      <path d="m3 8 4-4 4 4M7 4v16M11 12h4M11 16h7M11 20h10" />
+    </svg>
+  );
+}
+
+export function ArrowDownWideNarrowIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 15)} class={props.class}>
+      <path d="m3 16 4 4 4-4M7 20V4M11 4h10M11 8h7M11 12h4" />
+    </svg>
+  );
+}
+
 export function ChevronDownIcon(props: IconProps) {
   return (
     <svg {...base(props.size ?? 14)} class={props.class}>
