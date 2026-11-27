@@ -10,7 +10,6 @@
   --bg-card: #ffffff;
   --bg-well: #f3f4f5;
   --bg-hover: #eef0f3;
-  --bg-header: rgba(248, 249, 251, 0.8);
   --bg-media: #ffffff;
 
   --border-primary: #d0d1d3;
@@ -58,7 +57,6 @@
     0 22.3px 17.9px rgba(0, 0, 0, 0.072), 0 41.8px 33.4px rgba(0, 0, 0, 0.086),
     0 100px 80px rgba(0, 0, 0, 0.12);
   --image-outline: oklch(0 0 0 / 0.1);
-  --ambient-color: rgba(9, 119, 174, 0.075);
 
   --radius-xs: 8px;
   --radius-sm: 10px;
@@ -86,7 +84,6 @@
   --bg-card: #12161c;
   --bg-well: #090b0e;
   --bg-hover: #191e24;
-  --bg-header: rgba(12, 15, 19, 0.78);
   --bg-media: #ffffff;
 
   --border-primary: #2a313b;
@@ -123,7 +120,6 @@
   --shadow-overlay:
     0 0 0 1px oklch(1 0 0 / 0.1), 0 28px 64px -16px rgba(0, 0, 0, 0.72);
   --image-outline: oklch(1 0 0 / 0.1);
-  --ambient-color: rgba(10, 160, 239, 0.11);
 }
 
 /* ==========================================================================
@@ -202,15 +198,6 @@ a {
   isolation: isolate;
 }
 
-.ambient-glow {
-  position: fixed;
-  inset: 0 0 auto 0;
-  height: 360px;
-  z-index: -1;
-  pointer-events: none;
-  background: radial-gradient(65% 100% at 50% -12%, var(--ambient-color) 0%, transparent 74%);
-}
-
 .skip-link {
   position: absolute;
   left: -9999px;
@@ -230,20 +217,14 @@ a {
 }
 
 .site-header {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  background: var(--bg-header);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border-bottom: 1px solid var(--border-subtle);
   padding-top: env(safe-area-inset-top);
 }
 
+/* Quiet top row: who the list belongs to, theme, admin link. Not sticky. */
 .site-header-inner {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 0.75rem max(var(--gutter), env(safe-area-inset-right)) 0.75rem
+  padding: 1rem max(var(--gutter), env(safe-area-inset-right)) 0
     max(var(--gutter), env(safe-area-inset-left));
   display: flex;
   align-items: center;
@@ -254,13 +235,25 @@ a {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.625rem;
+  gap: 0.55rem;
   text-decoration: none;
   font-weight: 600;
   font-size: 0.9375rem;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-full);
+}
+
+.brand-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  background: var(--text-primary);
+  color: var(--bg-body);
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 
 .header-actions {
@@ -280,41 +273,13 @@ a {
   }
 }
 
-.brand-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent-soft-bg);
-  color: var(--accent-soft-text);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent);
-}
-
 .page-main {
   flex: 1;
   width: 100%;
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 2.5rem max(var(--gutter), env(safe-area-inset-right)) 4rem
-    max(var(--gutter), env(safe-area-inset-left));
-}
-
-.site-footer {
-  max-width: var(--max-width);
-  width: 100%;
-  margin: 0 auto;
-  padding: 1.5rem max(var(--gutter), env(safe-area-inset-right))
-    max(2.25rem, env(safe-area-inset-bottom)) max(var(--gutter), env(safe-area-inset-left));
-  border-top: 1px solid var(--border-subtle);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 0.8125rem;
-}
-
-.site-footer p {
-  margin: 0;
+  padding: 2.5rem max(var(--gutter), env(safe-area-inset-right))
+    max(4rem, env(safe-area-inset-bottom)) max(var(--gutter), env(safe-area-inset-left));
 }
 
 @media (max-width: 479px) {
@@ -364,8 +329,78 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-bottom: 1.25rem;
+}
+
+.toolbar-selects {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Native <select>: real picker on phones, styled to sit next to the segmented control */
+.select-wrap {
+  position: relative;
+  display: flex;
+}
+
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 100%;
+  min-height: 38px;
+  padding: 0.4rem 2rem 0.4rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-well);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease,
+    color var(--dur-fast) ease;
+}
+
+.select-chevron {
+  position: absolute;
+  right: 0.65rem;
+  top: 50%;
+  translate: 0 -50%;
+  pointer-events: none;
+  color: var(--text-muted);
+}
+
+/* A non-default choice reads as an active filter */
+.select-wrap.is-active .select {
+  background: var(--accent-soft-bg);
+  border-color: color-mix(in oklab, var(--accent) 30%, transparent);
+  color: var(--accent-soft-text);
+}
+
+.select-wrap.is-active .select-chevron {
+  color: var(--accent-soft-text);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .select-wrap:not(.is-active) .select:hover {
+    color: var(--text-primary);
+    border-color: var(--border-primary);
+  }
+}
+
+@media (max-width: 479px) {
+  .toolbar-selects {
+    width: 100%;
+  }
+
+  .toolbar-selects .select-wrap {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 .segmented {
@@ -1783,8 +1818,13 @@ dialog.modal-dialog[open]::backdrop {
 /* Touch: 44px targets, and 16px inputs so iOS does not zoom on focus */
 @media (pointer: coarse) {
   .btn,
-  .segmented-btn {
+  .segmented-btn,
+  .select {
     min-height: 44px;
+  }
+
+  .select {
+    font-size: 16px;
   }
 
   .icon-btn {
@@ -1808,14 +1848,8 @@ dialog.modal-dialog[open]::backdrop {
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .site-header {
-    background: var(--bg-body);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-
-  .wish-status-overlay .badge {
-    background: var(--bg-card);
+  dialog.modal-dialog::backdrop {
+    background: rgba(9, 11, 14, 0.72);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }

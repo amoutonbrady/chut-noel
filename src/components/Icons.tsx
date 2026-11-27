@@ -156,6 +156,14 @@ export function SparkleLinkIcon(props: IconProps) {
   );
 }
 
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <svg {...base(props.size ?? 14)} class={props.class}>
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
 export function SunIcon(props: IconProps) {
   return (
     <svg {...base(props.size ?? 16)} class={props.class}>

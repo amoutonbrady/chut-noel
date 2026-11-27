@@ -21,8 +21,6 @@ function AppShell() {
 
   return (
     <div class="app-shell">
-      <div class="ambient-glow" aria-hidden="true" />
-
       <a href="#main-content" class="skip-link">
         Aller au contenu principal
       </a>
@@ -34,10 +32,10 @@ function AppShell() {
             class="brand"
             onClick={handleLinkClick("/")}
           >
-            <span class="brand-mark" aria-hidden="true">
-              <GiftIcon size={16} />
+            <span class="brand-avatar" aria-hidden="true">
+              A
             </span>
-            <span class="brand-name">Envies d'Alexandre</span>
+            <span class="brand-name">Alexandre</span>
           </a>
 
           <nav class="header-actions" aria-label="Navigation principale">
@@ -98,10 +96,6 @@ function AppShell() {
           </Match>
         </Switch>
       </main>
-
-      <footer class="site-footer">
-        <p>Chut&nbsp;! Les réservations restent invisibles pour Alexandre.</p>
-      </footer>
     </div>
   );
 }

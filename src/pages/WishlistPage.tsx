@@ -30,12 +30,44 @@ import {
 } from "../lib/api";
 import type { SavedClaimToken } from "../lib/api";
 import { RouterContext } from "../lib/router";
-import { AlertIcon, GiftIcon, PencilIcon, ShieldIcon, UsersIcon } from "../components/Icons";
+import { BUDGETS, inBudget, parsePrice } from "../lib/price";
+import type { BudgetKey } from "../lib/price";
+import {
+  AlertIcon,
+  ChevronDownIcon,
+  GiftIcon,
+  PencilIcon,
+  ShieldIcon,
+  UsersIcon,
+} from "../components/Icons";
 import { ModalDialog } from "../components/ModalDialog";
 import { ToastContext } from "../components/ToastHost";
 import { WishCard } from "../components/WishCard";
 
 type FilterMode = "all" | "available" | "reserved";
+type SortKey = "list" | "recent" | "price-asc" | "price-desc";
+
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: "list", label: "Ordre de la liste" },
+  { key: "recent", label: "Ajouts récents" },
+  { key: "price-asc", label: "Prix croissant" },
+  { key: "price-desc", label: "Prix décroissant" },
+];
+
+// Unpriced items always go last when sorting by price
+function sortItems(list: WishItem[], key: SortKey): WishItem[] {
+  if (key === "list") return list;
+  if (key === "recent") {
+    return [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  const dir = key === "price-asc" ? 1 : -1;
+  return [...list].sort((a, b) => {
+    const pa = parsePrice(a.priceHint);
+    const pb = parsePrice(b.priceHint);
+    if (pa === null || pb === null) return pa === pb ? 0 : pa === null ? 1 : -1;
+    return (pa - pb) * dir;
+  });
+}
 
 // Opening the keyboard on a phone hides half the dialog: autofocus only with a mouse
 const finePointer = () =>
@@ -52,6 +84,8 @@ function WishlistContent(props: WishlistContentProps) {
   const toast = useContext(ToastContext);
 
   const [filter, setFilter] = createSignal<FilterMode>("all");
+  const [budget, setBudget] = createSignal<BudgetKey>("all");
+  const [sort, setSort] = createSignal<SortKey>("list");
   const [myTokens, setMyTokens] = createSignal<SavedClaimToken[]>(
     getSavedClaimTokens(),
   );
@@ -84,22 +118,37 @@ function WishlistContent(props: WishlistContentProps) {
   const items = createMemo(() => props.data.items);
   const claimsByItem = createMemo(() => props.data.claimsByItem);
 
+  // Budget narrows first, so the availability counts match what is shown
+  const budgetItems = createMemo(() =>
+    items().filter((item) => inBudget(item.priceHint, budget())),
+  );
+
   const reservedCount = createMemo(
     () =>
-      items().filter((item) => (claimsByItem()[item.id]?.length ?? 0) > 0)
+      budgetItems().filter((item) => (claimsByItem()[item.id]?.length ?? 0) > 0)
         .length,
   );
-  const availableCount = createMemo(() => items().length - reservedCount());
+  const availableCount = createMemo(() => budgetItems().length - reservedCount());
 
   const filteredItems = createMemo(() => {
     const current = filter();
     const map = claimsByItem();
-    if (current === "all") return items();
-    if (current === "available") {
-      return items().filter((item) => (map[item.id]?.length ?? 0) === 0);
-    }
-    return items().filter((item) => (map[item.id]?.length ?? 0) > 0);
+    const list =
+      current === "all"
+        ? budgetItems()
+        : budgetItems().filter((item) =>
+            current === "available"
+              ? (map[item.id]?.length ?? 0) === 0
+              : (map[item.id]?.length ?? 0) > 0,
+          );
+    return sortItems(list, sort());
   });
+
+  const filtersActive = () => filter() !== "all" || budget() !== "all";
+  const resetFilters = () => {
+    setFilter("all");
+    setBudget("all");
+  };
 
   const targetExistingClaims = createMemo(() => {
     const target = reserveTarget();
@@ -261,6 +310,12 @@ function WishlistContent(props: WishlistContentProps) {
         desc: "Alexandre n'a pas encore ajouté d'idées. Repasse bientôt !",
       };
     }
+    if (budgetItems().length === 0) {
+      return {
+        title: "Rien dans ce budget",
+        desc: "Essaie une autre tranche de prix, ou affiche toute la liste.",
+      };
+    }
     if (filter() === "available") {
       return {
         title: "Tout est déjà réservé",
@@ -274,7 +329,7 @@ function WishlistContent(props: WishlistContentProps) {
   };
 
   const filters: { value: FilterMode; label: string; count: () => number }[] = [
-    { value: "all", label: "Toutes", count: () => items().length },
+    { value: "all", label: "Toutes", count: () => budgetItems().length },
     { value: "available", label: "Disponibles", count: availableCount },
     { value: "reserved", label: "Réservées", count: reservedCount },
   ];
@@ -282,16 +337,16 @@ function WishlistContent(props: WishlistContentProps) {
   return (
     <div class="wishlist-view">
       <section class="hero reveal-soft">
-        <h1 class="hero-title">Une idée pour Alexandre&nbsp;?</h1>
+        <h1 class="hero-title">Liste d'envies</h1>
         <p class="hero-subtitle">
-          Choisis une envie et réserve-la. Les autres proches verront qu'elle
-          est prise&nbsp;; Alexandre, lui, ne verra rien.
+          Réserve une idée pour éviter les doublons. Alexandre ne voit pas qui
+          offre quoi.
         </p>
       </section>
 
       <Show when={items().length > 0}>
         <div class="toolbar reveal-soft">
-          <div class="segmented" role="group" aria-label="Filtrer les envies">
+          <div class="segmented" role="group" aria-label="Filtrer par disponibilité">
             <For each={filters}>
               {(f) => (
                 <button
@@ -306,6 +361,35 @@ function WishlistContent(props: WishlistContentProps) {
               )}
             </For>
           </div>
+
+          <div class="toolbar-selects">
+            <div class={["select-wrap", { "is-active": budget() !== "all" }]}>
+              <select
+                class="select"
+                aria-label="Budget"
+                value={budget()}
+                onChange={(e) => setBudget(e.currentTarget.value as BudgetKey)}
+              >
+                <For each={BUDGETS}>
+                  {(b) => <option value={b.key}>{b.label}</option>}
+                </For>
+              </select>
+              <ChevronDownIcon size={14} class="select-chevron" />
+            </div>
+            <div class={["select-wrap", { "is-active": sort() !== "list" }]}>
+              <select
+                class="select"
+                aria-label="Trier"
+                value={sort()}
+                onChange={(e) => setSort(e.currentTarget.value as SortKey)}
+              >
+                <For each={SORTS}>
+                  {(s) => <option value={s.key}>{s.label}</option>}
+                </For>
+              </select>
+              <ChevronDownIcon size={14} class="select-chevron" />
+            </div>
+          </div>
         </div>
       </Show>
 
@@ -318,11 +402,11 @@ function WishlistContent(props: WishlistContentProps) {
             </span>
             <h2 class="empty-title">{emptyCopy().title}</h2>
             <p class="empty-desc">{emptyCopy().desc}</p>
-            <Show when={items().length > 0 && filter() !== "all"}>
+            <Show when={items().length > 0 && filtersActive()}>
               <button
                 type="button"
                 class="btn btn-secondary btn-sm"
-                onClick={() => setFilter("all")}
+                onClick={resetFilters}
               >
                 Voir toutes les envies
               </button>
@@ -670,10 +754,9 @@ function OwnerLoader(props: { token: string }) {
       <Loading on="owner-items" fallback={<ListSkeleton />}>
         <div class="wishlist-view">
           <section class="hero reveal-soft">
-            <h1 class="hero-title">Ta liste, sans spoiler</h1>
+            <h1 class="hero-title">Ta liste d'envies</h1>
             <p class="hero-subtitle">
-              C'est ce que voient tes proches, moins les réservations. La
-              surprise reste entière.
+              Telle que la voient tes proches, sans les réservations.
             </p>
             <div class="hero-actions">
               <button
