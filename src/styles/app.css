@@ -1702,8 +1702,109 @@ a {
   font-size: var(--text-body);
   color: var(--text-secondary);
   line-height: 1.5;
-  white-space: pre-line;
   max-width: 60ch;
+}
+
+.markdown-note > :first-child {
+  margin-top: 0;
+}
+
+.markdown-note > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-note p {
+  margin: 0.4em 0;
+}
+
+.markdown-note strong,
+.markdown-note b {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.markdown-note del,
+.markdown-note s {
+  opacity: 0.78;
+}
+
+.markdown-note a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  overflow-wrap: anywhere;
+}
+
+.markdown-note a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.markdown-note ul,
+.markdown-note ol {
+  margin: 0.35em 0;
+  padding-left: 1.25em;
+}
+
+.markdown-note li + li {
+  margin-top: 0.15em;
+}
+
+.markdown-note li > p {
+  margin: 0;
+}
+
+.markdown-note input[type="checkbox"] {
+  margin-right: 0.4em;
+  accent-color: var(--accent);
+}
+
+.markdown-note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+  padding: 0.08em 0.3em;
+  border-radius: var(--radius-xs);
+  background: var(--bg-well);
+  color: var(--text-primary);
+}
+
+.markdown-note pre {
+  margin: 0.45em 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-xs);
+  background: var(--bg-well);
+  overflow-x: auto;
+}
+
+.markdown-note pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown-note blockquote {
+  margin: 0.4em 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-muted);
+}
+
+.markdown-note h1,
+.markdown-note h2,
+.markdown-note h3,
+.markdown-note h4,
+.markdown-note h5,
+.markdown-note h6 {
+  margin: 0.5em 0 0.2em;
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+.markdown-note hr {
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  margin: 0.55em 0;
 }
 
 /* Correspondence slip for guest claims & messages (left ribbon line, not a nested box) */

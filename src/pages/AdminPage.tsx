@@ -36,6 +36,7 @@ import {
   SparkleLinkIcon,
   TrashIcon,
 } from "../components/Icons";
+import { MarkdownNote } from "../components/MarkdownNote";
 import { ModalDialog } from "../components/ModalDialog";
 import { ToastContext } from "../components/ToastHost";
 import {
@@ -647,14 +648,14 @@ export function AdminPage() {
 
                 <div class="field">
                   <label class="field-label" for={noteId}>
-                    Précisions <span class="field-optional">(facultatif)</span>
+                    Précisions <span class="field-optional">(facultatif, Markdown accepté)</span>
                   </label>
                   <textarea
                     id={noteId}
                     class="textarea"
                     rows={2}
-                    maxlength={320}
-                    placeholder="Ex. Taille M, coloris noir mat"
+                    maxlength={400}
+                    placeholder="Ex. Taille **M**, coloris noir mat — [guide des tailles](https://…)"
                     value={draft().note}
                     onInput={(e) =>
                       updateDraftField("note", e.currentTarget.value)
@@ -747,7 +748,13 @@ export function AdminPage() {
                       {previewTitle()}
                     </p>
                     <Show when={draft().note.trim()}>
-                      {(note) => <p class="live-preview-note">{note()}</p>}
+                      {(note) => (
+                        <MarkdownNote
+                          value={note()}
+                          class="live-preview-note"
+                          streaming
+                        />
+                      )}
                     </Show>
                     <Show when={draft().priceHint.trim()}>
                       {(price) => (
@@ -858,7 +865,12 @@ export function AdminPage() {
                           </Show>
 
                           <Show when={item.note}>
-                            {(note) => <p class="admin-item-note">{note()}</p>}
+                            {(note) => (
+                              <MarkdownNote
+                                value={note()}
+                                class="admin-item-note"
+                              />
+                            )}
                           </Show>
                         </div>
 
@@ -958,13 +970,13 @@ export function AdminPage() {
 
                 <div class="field">
                   <label class="field-label" for={editNoteId}>
-                    Précisions
+                    Précisions <span class="field-optional">(Markdown accepté)</span>
                   </label>
                   <textarea
                     id={editNoteId}
                     class="textarea"
                     rows={3}
-                    maxlength={320}
+                    maxlength={400}
                     value={editDraft().note}
                     onInput={(e) =>
                       updateEditField("note", e.currentTarget.value)

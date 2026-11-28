@@ -14,6 +14,7 @@ import {
   RibbonBowIcon,
   UsersIcon,
 } from "./Icons";
+import { MarkdownNote } from "./MarkdownNote";
 
 export interface WishCardProps {
   item: WishItem;
@@ -264,7 +265,7 @@ export function WishCard(props: WishCardProps) {
         </h3>
 
         <Show when={props.item.note}>
-          {(note) => <p class="wish-note">{note()}</p>}
+          {(note) => <MarkdownNote value={note()} class="wish-note" />}
         </Show>
 
         <Show when={showClaimInfo()}>
