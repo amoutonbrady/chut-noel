@@ -1,5 +1,6 @@
 import { createSignal, flush, onSettled } from "solid-js";
 import { MoonIcon, SunIcon } from "./Icons";
+import { IconButton } from "./ui/Button";
 
 type Theme = "light" | "dark";
 
@@ -113,15 +114,21 @@ export function ThemeToggle() {
   const label = () =>
     theme() === "dark" ? "Passer en mode clair" : "Passer en mode sombre";
 
+  const iconClass =
+    "transition-transform duration-240 ease-atelier motion-safe:group-hover:rotate-22";
+
   return (
-    <button
-      type="button"
-      class="icon-btn theme-toggle"
+    <IconButton
+      class="group"
       aria-label={label()}
       title={label()}
       onClick={toggle}
     >
-      {theme() === "dark" ? <SunIcon size={17} /> : <MoonIcon size={17} />}
-    </button>
+      {theme() === "dark" ? (
+        <SunIcon size={17} class={iconClass} />
+      ) : (
+        <MoonIcon size={17} class={iconClass} />
+      )}
+    </IconButton>
   );
 }

@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
     "test": "vitest run"
   },
   "dependencies": {
@@ -21,7 +22,11 @@
   },
   "devDependencies": {
     "@netlify/vite-plugin": "^3.0.1",
+    "@shadcn/lint": "^0.2.5",
     "@solidjs/vite-plugin": "^3.0.1",
+    "@tailwindcss/vite": "^4.3.5",
+    "oxlint": "^1.95.0",
+    "tailwindcss": "^4.3.5",
     "typescript": "^5.9.3",
     "vite": "^8.3.8",
     "vitest": "^3.2.4"

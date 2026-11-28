@@ -57,6 +57,9 @@ import {
 import { ModalDialog } from "../components/ModalDialog";
 import { ToastContext } from "../components/ToastHost";
 import { WishCard } from "../components/WishCard";
+import { Button } from "../components/ui/Button";
+import { Field, FieldHint, FieldLabel, FormAlert, Input, Textarea } from "../components/ui/Form";
+import { EmptyState } from "../components/ui/Surface";
 
 const VIEW_MODE_KEY = "wish:view";
 
@@ -119,10 +122,10 @@ function runReorderTransition(update: () => void): void {
 function sortItems(list: WishItem[], key: SortKey): WishItem[] {
   if (key === "list") return list;
   if (key === "recent") {
-    return [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return list.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
   const dir = key === "price-asc" ? 1 : -1;
-  return [...list].sort((a, b) => {
+  return list.toSorted((a, b) => {
     const pa = parsePrice(a.priceHint);
     const pb = parsePrice(b.priceHint);
     if (pa === null || pb === null) return pa === pb ? 0 : pa === null ? 1 : -1;
@@ -437,11 +440,13 @@ function WishlistContent(props: WishlistContentProps) {
   };
 
   return (
-    <div class="wishlist-view">
-      <section class="masthead reveal-soft">
-        <div class="masthead-copy">
-          <h1 class="hero-title">Liste d'envies</h1>
-          <p class="hero-subtitle">
+    <div>
+      <section class="reveal-soft flex items-end justify-between flex-wrap gap-x-8 gap-y-4 mb-5.5">
+        <div class="min-w-0 flex-1 basis-72">
+          <h1 class="m-0 font-display text-hero font-semibold tracking-tight leading-none text-ink text-balance font-soft-hero">
+            Liste d'envies
+          </h1>
+          <p class="mt-2.5 mb-0 text-body text-ink-muted max-w-copy text-pretty">
             Réserve une idée pour éviter les doublons. Alexandre ne voit pas qui
             offre quoi.
           </p>
@@ -449,20 +454,24 @@ function WishlistContent(props: WishlistContentProps) {
 
         <Show when={items().length > 0}>
           <div
-            class="progress-meter"
+            class="min-w-52 flex-1 sm:flex-initial sm:w-62 flex flex-col gap-2 px-4 py-3 rounded-sm bg-card shadow-card contrast-more:border contrast-more:border-line-strong forced-colors:border forced-colors:border-canvas-text"
             aria-label={`${totalReservedCount()} envies réservées sur ${items().length}`}
           >
-            <div class="progress-meter-head">
-              <span class="progress-meter-count">
-                <strong class="num">{totalReservedCount()}</strong> sur{" "}
-                <span class="num">{items().length}</span> réservées
+            <div class="flex items-baseline justify-between gap-3 text-sm text-ink-muted">
+              <span>
+                <strong class="tabular-nums text-ink font-semibold">
+                  {totalReservedCount()}
+                </strong>{" "}
+                sur <span class="tabular-nums">{items().length}</span> réservées
               </span>
-              <span class="progress-meter-pct num">{progressPct()}%</span>
+              <span class="font-semibold text-accent-soft-foreground tabular-nums">
+                {progressPct()}%
+              </span>
             </div>
-            <div class="progress-track" aria-hidden="true">
+            <div class="h-1.5 rounded-full bg-well overflow-hidden" aria-hidden="true">
               <div
-                class="progress-fill"
-                style={{ width: `${progressPct()}%` }}
+                class="progress-gradient h-full rounded-full transition-all duration-380 ease-atelier"
+                style={{ "--progress": `${progressPct()}%` }}
               />
             </div>
           </div>
@@ -470,7 +479,7 @@ function WishlistContent(props: WishlistContentProps) {
       </section>
 
       <Show when={items().length > 0}>
-        <div class="toolbar reveal-soft">
+        <div class="reveal-soft flex items-center justify-between flex-wrap gap-3 mb-5">
           <AvailabilityToggle
             value={filter()}
             counts={{
@@ -480,7 +489,7 @@ function WishlistContent(props: WishlistContentProps) {
             }}
             onChange={handleFilterChange}
           />
-          <div class="toolbar-filters">
+          <div class="grid grid-cols-2 w-full sm:flex sm:w-auto items-center gap-2">
             <BudgetFilter
               value={budget()}
               ceiling={ceiling()}
@@ -498,30 +507,27 @@ function WishlistContent(props: WishlistContentProps) {
       <Show
         when={filteredItems().length > 0}
         fallback={
-          <section class="empty-card reveal-soft">
-            <span class="empty-icon" aria-hidden="true">
-              <GiftIcon size={22} />
-            </span>
-            <h2 class="empty-title">{emptyCopy().title}</h2>
-            <p class="empty-desc">{emptyCopy().desc}</p>
-            <Show when={items().length > 0 && filtersActive()}>
-              <button
-                type="button"
-                class="btn btn-secondary btn-sm"
-                onClick={resetFilters}
-              >
-                Voir toutes les envies
-              </button>
-            </Show>
-          </section>
+          <EmptyState
+            reveal
+            icon={<GiftIcon size={22} />}
+            title={emptyCopy().title}
+            description={emptyCopy().desc}
+            action={
+              <Show when={items().length > 0 && filtersActive()}>
+                <Button variant="secondary" size="sm" onClick={resetFilters}>
+                  Voir toutes les envies
+                </Button>
+              </Show>
+            }
+          />
         }
       >
         <ul
           class={[
-            "wish-collection",
+            "list-none m-0 p-0",
             viewMode() === "list"
-              ? "wish-collection--list"
-              : "wish-collection--grid",
+              ? "flex flex-col divide-y divide-line-subtle bg-card rounded-md shadow-card overflow-hidden contrast-more:border contrast-more:border-line-strong forced-colors:border forced-colors:border-canvas-text"
+              : "grid grid-wishes gap-5 items-stretch",
           ]}
           aria-label="Envies"
         >
@@ -562,48 +568,60 @@ function WishlistContent(props: WishlistContentProps) {
         }}
       >
         <Show when={reserveTarget()}>
-          <form class="stack" onSubmit={(e) => void handleSubmitClaim(e)}>
+          <form class="flex flex-col gap-4" onSubmit={(e) => void handleSubmitClaim(e)}>
             <Show
               when={targetIsGroup()}
               fallback={
-                <fieldset class="field-group">
-                  <legend class="field-label">Comment veux-tu l'offrir&nbsp;?</legend>
-                  <div class="mode-grid">
-                    <label class="mode-option">
+                <fieldset class="flex flex-col gap-2 border-0 p-0 m-0 min-w-0">
+                  <legend class="mb-2 p-0 text-sm font-semibold text-ink-secondary">
+                    Comment veux-tu l'offrir&nbsp;?
+                  </legend>
+                  <div class="grid grid-cols-1 xs:grid-cols-2 gap-2.5">
+                    <label class="group relative flex items-start gap-2.5 px-3.5 py-3.5 pointer-coarse:py-4 rounded-sm border border-line bg-card cursor-pointer transition duration-150 ease-atelier hover:border-line-strong has-checked:border-accent has-checked:bg-accent-soft forced-colors:has-checked:border-2 forced-colors:has-checked:border-highlight">
                       <input
                         type="radio"
                         name={modeName}
                         value="solo"
+                        class="shrink-0 mt-1 size-4 accent-accent focus-visible:outline-offset-3"
                         checked={reserveMode() === "solo"}
                         onChange={() => setReserveMode("solo")}
                       />
-                      <span class="mode-option-title">Seul·e</span>
-                      <span class="mode-option-desc">
-                        Je m'en occupe. L'envie passe en «&nbsp;déjà réservé&nbsp;».
+                      <span class="min-w-0 flex flex-col gap-0.5">
+                        <span class="text-body font-semibold text-ink">
+                          Seul·e
+                        </span>
+                        <span class="text-sm text-ink-muted leading-snug group-has-checked:text-ink-secondary">
+                          Je m'en occupe. L'envie passe en «&nbsp;déjà réservé&nbsp;».
+                        </span>
                       </span>
                     </label>
-                    <label class="mode-option">
+                    <label class="group relative flex items-start gap-2.5 px-3.5 py-3.5 pointer-coarse:py-4 rounded-sm border border-line bg-card cursor-pointer transition duration-150 ease-atelier hover:border-line-strong has-checked:border-group has-checked:bg-group-soft forced-colors:has-checked:border-2 forced-colors:has-checked:border-highlight">
                       <input
                         type="radio"
                         name={modeName}
                         value="group"
+                        class="shrink-0 mt-1 size-4 accent-group focus-visible:outline-offset-3"
                         checked={reserveMode() === "group"}
                         onChange={() => setReserveMode("group")}
                       />
-                      <span class="mode-option-title">À plusieurs</span>
-                      <span class="mode-option-desc">
-                        D'autres proches pourront se joindre à toi.
+                      <span class="min-w-0 flex flex-col gap-0.5">
+                        <span class="text-body font-semibold text-ink">
+                          À plusieurs
+                        </span>
+                        <span class="text-sm text-ink-muted leading-snug group-has-checked:text-ink-secondary">
+                          D'autres proches pourront se joindre à toi.
+                        </span>
                       </span>
                     </label>
                   </div>
                 </fieldset>
               }
             >
-              <div class="info-banner">
-                <UsersIcon size={16} />
+              <div class="flex items-start gap-2.5 px-4 py-3 rounded-sm bg-group-soft border border-group-border text-group-soft-foreground">
+                <UsersIcon size={16} class="shrink-0 mt-0.5" />
                 <div>
-                  <p class="info-banner-title">Cadeau groupé en cours</p>
-                  <p class="info-banner-text">
+                  <p class="m-0 text-body font-semibold">Cadeau groupé en cours</p>
+                  <p class="mt-0.5 mb-0 text-sm">
                     Déjà partant·es&nbsp;:{" "}
                     <strong>{targetExistingClaims().map(guestLabel).join(", ")}</strong>
                   </p>
@@ -611,14 +629,13 @@ function WishlistContent(props: WishlistContentProps) {
               </div>
             </Show>
 
-            <div class="field">
-              <label class="field-label" for={nameInputId}>
-                Ton prénom <span class="field-optional">(facultatif)</span>
-              </label>
-              <input
+            <Field>
+              <FieldLabel for={nameInputId} optional="(facultatif)">
+                Ton prénom
+              </FieldLabel>
+              <Input
                 id={nameInputId}
                 type="text"
-                class="input"
                 maxlength={60}
                 autocomplete="given-name"
                 placeholder="Ex. Camille"
@@ -626,18 +643,17 @@ function WishlistContent(props: WishlistContentProps) {
                 value={guestName()}
                 onInput={(e) => setGuestName(e.currentTarget.value)}
               />
-              <span class="field-hint">
+              <FieldHint>
                 Seuls les autres proches le verront, jamais Alexandre.
-              </span>
-            </div>
+              </FieldHint>
+            </Field>
 
-            <div class="field">
-              <label class="field-label" for={msgInputId}>
-                Un mot pour les autres <span class="field-optional">(facultatif)</span>
-              </label>
-              <textarea
+            <Field>
+              <FieldLabel for={msgInputId} optional="(facultatif)">
+                Un mot pour les autres
+              </FieldLabel>
+              <Textarea
                 id={msgInputId}
-                class="textarea"
                 rows={2}
                 maxlength={240}
                 placeholder={
@@ -648,29 +664,23 @@ function WishlistContent(props: WishlistContentProps) {
                 value={guestMessage()}
                 onInput={(e) => setGuestMessage(e.currentTarget.value)}
               />
-            </div>
+            </Field>
 
             <Show when={formError()}>
-              {(err) => (
-                <div class="form-alert" role="alert">
-                  <AlertIcon size={15} />
-                  <span>{err()}</span>
-                </div>
-              )}
+              {(err) => <FormAlert>{err()}</FormAlert>}
             </Show>
 
-            <div class="modal-actions">
-              <button
-                type="button"
-                class="btn btn-secondary"
+            <div class="flex flex-col-reverse items-stretch sm:flex-row sm:items-center sm:justify-end gap-2 pt-2">
+              <Button
+                variant="secondary"
                 disabled={submitting()}
                 onClick={() => setReserveOpen(false)}
               >
                 Annuler
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
-                class={["btn", groupChosen() ? "btn-group" : "btn-primary"]}
+                variant={groupChosen() ? "group" : "primary"}
                 disabled={submitting()}
                 aria-busy={submitting() ? "true" : undefined}
               >
@@ -679,7 +689,7 @@ function WishlistContent(props: WishlistContentProps) {
                   : groupChosen()
                     ? "Participer"
                     : "Réserver"}
-              </button>
+              </Button>
             </div>
           </form>
         </Show>
@@ -700,8 +710,8 @@ function WishlistContent(props: WishlistContentProps) {
       >
         <Show when={releaseTarget()}>
           {(target) => (
-            <div class="stack">
-              <p class="modal-copy">
+            <div class="flex flex-col gap-4">
+              <p class="m-0 text-body text-ink-secondary leading-normal">
                 Utile si tu as réservé depuis un autre appareil, ou si quelqu'un
                 a changé d'avis.{" "}
                 {target().claims.length > 1
@@ -712,30 +722,23 @@ function WishlistContent(props: WishlistContentProps) {
               </p>
 
               <Show when={releaseError()}>
-                {(err) => (
-                  <div class="form-alert" role="alert">
-                    <AlertIcon size={15} />
-                    <span>{err()}</span>
-                  </div>
-                )}
+                {(err) => <FormAlert>{err()}</FormAlert>}
               </Show>
 
               <Show
                 when={target().claims.length > 1}
                 fallback={
-                  <div class="modal-actions">
-                    <button
-                      type="button"
-                      class="btn btn-secondary"
+                  <div class="flex flex-col-reverse items-stretch sm:flex-row sm:items-center sm:justify-end gap-2 pt-2">
+                    <Button
+                      variant="secondary"
                       autofocus
                       disabled={Boolean(releasingId())}
                       onClick={() => setReleaseOpen(false)}
                     >
                       Garder
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-danger"
+                    </Button>
+                    <Button
+                      variant="danger"
                       disabled={Boolean(releasingId())}
                       aria-busy={releasingId() ? "true" : undefined}
                       onClick={() =>
@@ -747,38 +750,37 @@ function WishlistContent(props: WishlistContentProps) {
                         : releaseFreesItem()
                           ? "Rendre disponible"
                           : "Retirer sa participation"}
-                    </button>
+                    </Button>
                   </div>
                 }
               >
-                <div class="release-list">
+                <div class="flex flex-col gap-2">
                   <For each={target().claims} keyed={(claim) => claim.id}>
                     {(claim) => (
-                      <div class="release-row">
-                        <span class="release-who">{guestLabel(claim())}</span>
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-ghost--danger btn-sm"
+                      <div class="flex items-center justify-between gap-3 py-2 pr-2 pl-3.5 rounded-sm bg-well border border-line-subtle">
+                        <span class="text-body font-medium">{guestLabel(claim())}</span>
+                        <Button
+                          variant="ghost-danger"
+                          size="sm"
                           disabled={Boolean(releasingId())}
                           aria-label={`Retirer la participation de ${guestLabel(claim())}`}
                           onClick={() => void handleForceRelease(claim().id)}
                         >
                           {releasingId() === claim().id ? "Un instant…" : "Retirer"}
-                        </button>
+                        </Button>
                       </div>
                     )}
                   </For>
                 </div>
-                <div class="modal-actions">
-                  <button
-                    type="button"
-                    class="btn btn-secondary"
+                <div class="flex flex-col-reverse items-stretch sm:flex-row sm:items-center sm:justify-end gap-2 pt-2">
+                  <Button
+                    variant="secondary"
                     autofocus
                     disabled={Boolean(releasingId())}
                     onClick={() => setReleaseOpen(false)}
                   >
                     Fermer
-                  </button>
+                  </Button>
                 </div>
               </Show>
             </div>
@@ -790,12 +792,12 @@ function WishlistContent(props: WishlistContentProps) {
 }
 
 const ListSkeleton = () => (
-  <div class="skeleton-wrap" aria-busy="true" aria-label="Chargement de la liste">
-    <div class="skeleton-hero" />
-    <div class="skeleton-grid">
-      <div class="skeleton-tile" />
-      <div class="skeleton-tile" />
-      <div class="skeleton-tile" />
+  <div class="flex flex-col gap-6" aria-busy="true" aria-label="Chargement de la liste">
+    <div class="h-19 max-w-skeleton rounded-sm bg-well skeleton-pulse" />
+    <div class="grid grid-wishes gap-5">
+      <div class="h-85 rounded-md skeleton-tile-bg shadow-card skeleton-pulse" />
+      <div class="h-85 rounded-md skeleton-tile-bg shadow-card skeleton-pulse" />
+      <div class="h-85 rounded-md skeleton-tile-bg shadow-card skeleton-pulse" />
     </div>
   </div>
 );
@@ -806,24 +808,22 @@ function WishlistLoader() {
   return (
     <Errored
       fallback={(err, reset) => (
-        <section class="empty-card" role="alert">
-          <span class="empty-icon empty-icon--error" aria-hidden="true">
-            <AlertIcon size={22} />
-          </span>
-          <h2 class="empty-title">La liste n'a pas pu se charger</h2>
-          <p class="empty-desc">
-            {err() instanceof ApiError
+        <EmptyState
+          role="alert"
+          tone="error"
+          icon={<AlertIcon size={22} />}
+          title="La liste n'a pas pu se charger"
+          description={
+            err() instanceof ApiError
               ? (err() as ApiError).message
-              : "Vérifie ta connexion, puis réessaie."}
-          </p>
-          <button
-            type="button"
-            class="btn btn-secondary btn-sm"
-            onClick={reset}
-          >
-            Réessayer
-          </button>
-        </section>
+              : "Vérifie ta connexion, puis réessaie."
+          }
+          action={
+            <Button variant="secondary" size="sm" onClick={reset}>
+              Réessayer
+            </Button>
+          }
+        />
       )}
     >
       <Loading on="wishlist" fallback={<ListSkeleton />}>
@@ -846,69 +846,75 @@ function OwnerLoader(props: { token: string }) {
   return (
     <Errored
       fallback={(err) => (
-        <section class="empty-card" role="alert">
-          <span class="empty-icon empty-icon--error" aria-hidden="true">
-            <AlertIcon size={22} />
-          </span>
-          <h2 class="empty-title">Ta liste n'a pas pu se charger</h2>
-          <p class="empty-desc">
-            {err() instanceof ApiError
+        <EmptyState
+          role="alert"
+          tone="error"
+          icon={<AlertIcon size={22} />}
+          title="Ta liste n'a pas pu se charger"
+          description={
+            err() instanceof ApiError
               ? (err() as ApiError).message
-              : "Vérifie ta connexion, puis reconnecte-toi."}
-          </p>
-          <button
-            type="button"
-            class="btn btn-secondary btn-sm"
-            onClick={() => router.navigate("/admin")}
-          >
-            Se reconnecter
-          </button>
-        </section>
+              : "Vérifie ta connexion, puis reconnecte-toi."
+          }
+          action={
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => router.navigate("/admin")}
+            >
+              Se reconnecter
+            </Button>
+          }
+        />
       )}
     >
       <Loading on="owner-items" fallback={<ListSkeleton />}>
-        <div class="wishlist-view">
-          <section class="masthead reveal-soft">
-            <div class="masthead-copy">
-              <h1 class="hero-title">Ta liste d'envies</h1>
-              <p class="hero-subtitle">
+        <div>
+          <section class="reveal-soft flex items-end justify-between flex-wrap gap-x-8 gap-y-4 mb-5.5">
+            <div class="min-w-0 flex-1 basis-72">
+              <h1 class="m-0 font-display text-hero font-semibold tracking-tight leading-none text-ink text-balance font-soft-hero">
+                Ta liste d'envies
+              </h1>
+              <p class="mt-2.5 mb-0 text-body text-ink-muted max-w-copy text-pretty">
                 Telle que la voient tes proches, sans les réservations.
               </p>
             </div>
-            <div class="masthead-actions">
-              <button
-                type="button"
-                class="btn btn-primary btn-sm"
+            <div class="flex flex-wrap gap-2">
+              <Button
+                variant="primary"
+                size="sm"
                 onClick={() => router.navigate("/admin")}
               >
-                <PencilIcon size={14} />
+                <PencilIcon size={14} class="shrink-0" />
                 <span>Modifier ma liste</span>
-              </button>
+              </Button>
             </div>
           </section>
 
           <Show
             when={dataMemo().items.length > 0}
             fallback={
-              <section class="empty-card reveal-soft">
-                <span class="empty-icon" aria-hidden="true">
-                  <GiftIcon size={22} />
-                </span>
-                <h2 class="empty-title">Ta liste est encore vide</h2>
-                <p class="empty-desc">
-                  Ajoute ta première envie&nbsp;: un lien suffit.
-                </p>
-                <button
-                  type="button"
-                  class="btn btn-primary btn-sm"
-                  onClick={() => router.navigate("/admin")}
-                >
-                  Ajouter une envie
-                </button>
-              </section>
+              <EmptyState
+                reveal
+                icon={<GiftIcon size={22} />}
+                title="Ta liste est encore vide"
+                description={"Ajoute ta première envie\u00A0: un lien suffit."}
+                action={
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => router.navigate("/admin")}
+                  >
+                    Ajouter une envie
+                  </Button>
+                }
+              />
             }
           >
-            <ul class="wish-collection wish-collection--list" aria-label="Mes envies">
+            <ul
+              class="list-none m-0 p-0 flex flex-col divide-y divide-line-subtle bg-card rounded-md shadow-card overflow-hidden contrast-more:border contrast-more:border-line-strong forced-colors:border forced-colors:border-canvas-text"
+              aria-label="Mes envies"
+            >
               <For each={dataMemo().items} keyed={(item) => item.id}>
                 {(item) => (
                   <WishCard
@@ -949,55 +955,77 @@ export function WishlistPage() {
     <Show
       when={isProche()}
       fallback={
-        <section class="gate-stage reveal-soft" aria-labelledby="gate-heading">
-          <div class="gate-envelope" aria-hidden="true">
-            <EnvelopeSealIllustration class="gate-envelope-svg" />
+        <section
+          class="gate-stage reveal-soft max-w-gate mt-gate mx-auto mb-8 flex flex-col items-center text-center"
+          aria-labelledby="gate-heading"
+        >
+          <div class="mb-5" aria-hidden="true">
+            <EnvelopeSealIllustration class="drop-shadow-envelope" />
           </div>
 
-          <h1 id="gate-heading" class="gate-title">
+          <h1
+            id="gate-heading"
+            class="m-0 font-display text-hero font-semibold tracking-tight leading-tight text-balance font-soft-gate"
+          >
             Qui es-tu&nbsp;?
           </h1>
-          <p class="gate-desc">
+          <p class="mt-3 mb-0 text-body text-ink-muted max-w-gate-desc text-pretty">
             Cette page montre qui offre quoi. Pour garder la surprise, Alexandre
             ne doit pas la voir.
           </p>
 
-          <div class="gate-choices">
+          <div class="mt-8 w-full grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <button
               type="button"
-              class="gate-choice gate-choice--primary"
+              class="gate-choice-primary group flex items-center gap-3.5 w-full px-5 py-4.5 rounded-md border border-transparent text-left cursor-pointer bg-accent text-accent-foreground shadow-gate-primary transition duration-220 ease-atelier motion-safe:hover:-translate-y-0.5 hover:bg-accent-hover motion-safe:active:scale-97 forced-colors:border-canvas-text"
               onClick={() => {
                 markProcheDevice();
                 setIsProche(true);
               }}
             >
-              <span class="gate-choice-icon" aria-hidden="true">
+              <span
+                class="size-10.5 rounded-sm inline-grid place-items-center shrink-0 bg-gate-icon-primary"
+                aria-hidden="true"
+              >
                 <GiftIcon size={20} />
               </span>
-              <span class="gate-choice-copy">
-                <span class="gate-choice-title">Je suis un·e proche</span>
-                <span class="gate-choice-hint">
+              <span class="flex-1 min-w-0 flex flex-col gap-0.5">
+                <span class="font-display text-heading font-semibold tracking-tight leading-tight">
+                  Je suis un·e proche
+                </span>
+                <span class="text-sm leading-snug opacity-90">
                   Découvrir la liste et réserver en secret
                 </span>
               </span>
-              <ArrowRightIcon size={17} class="gate-choice-arrow" />
+              <ArrowRightIcon
+                size={17}
+                class="shrink-0 opacity-78 transition duration-220 ease-atelier motion-safe:group-hover:translate-x-1 group-hover:opacity-100"
+              />
             </button>
 
             <button
               type="button"
-              class="gate-choice gate-choice--owner"
+              class="group flex items-center gap-3.5 w-full px-5 py-4.5 rounded-md border border-transparent text-left cursor-pointer bg-card text-ink shadow-card transition duration-220 ease-atelier motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-card-hover motion-safe:active:scale-97 contrast-more:border-line-strong forced-colors:border-canvas-text"
               onClick={() => router.navigate("/admin")}
             >
-              <span class="gate-choice-icon" aria-hidden="true">
+              <span
+                class="size-10.5 rounded-sm inline-grid place-items-center shrink-0 bg-well text-ink-secondary"
+                aria-hidden="true"
+              >
                 <LockIcon size={20} />
               </span>
-              <span class="gate-choice-copy">
-                <span class="gate-choice-title">Je suis Alexandre</span>
-                <span class="gate-choice-hint">
+              <span class="flex-1 min-w-0 flex flex-col gap-0.5">
+                <span class="font-display text-heading font-semibold tracking-tight leading-tight">
+                  Je suis Alexandre
+                </span>
+                <span class="text-sm leading-snug text-ink-muted">
                   Ouvrir l'espace gestion, sans aucun spoil
                 </span>
               </span>
-              <ArrowRightIcon size={17} class="gate-choice-arrow" />
+              <ArrowRightIcon
+                size={17}
+                class="shrink-0 opacity-78 transition duration-220 ease-atelier motion-safe:group-hover:translate-x-1 group-hover:opacity-100"
+              />
             </button>
           </div>
         </section>

@@ -1,6 +1,7 @@
 import { createEffect, createUniqueId, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { CloseIcon } from "./Icons";
+import { IconButton } from "./ui/Button";
 
 export interface ModalDialogProps {
   open: boolean;
@@ -63,7 +64,10 @@ export function ModalDialog(props: ModalDialogProps) {
       ref={(el) => {
         dialogRef = el;
       }}
-      class={["modal-dialog", { "modal-dialog--sm": props.size === "sm" }]}
+      class={[
+        "modal-dialog m-auto p-0 max-h-modal border border-line-subtle rounded-lg bg-card text-ink shadow-overlay overflow-hidden open:flex open:flex-col contrast-more:border-line-strong forced-colors:border-canvas-text",
+        props.size === "sm" ? "w-modal-sm" : "w-modal-md",
+      ]}
       aria-labelledby={titleId}
       aria-busy={dismissible() ? undefined : "true"}
       {...({ closedby: dismissible() ? "any" : "none" } as Record<string, unknown>)}
@@ -101,26 +105,32 @@ export function ModalDialog(props: ModalDialogProps) {
         downOutside = false;
       }}
     >
-      <header class="modal-header">
-        <div class="modal-heading">
-          <h2 id={titleId} class="modal-title">
+      <header class="flex items-start justify-between gap-3 pt-5.5 px-5.5">
+        <div class="min-w-0">
+          <h2
+            id={titleId}
+            class="m-0 font-display text-heading font-semibold tracking-tight leading-snug"
+          >
             {props.title}
           </h2>
           <Show when={props.subtitle}>
-            {(sub) => <p class="modal-subtitle">{sub()}</p>}
+            {(sub) => (
+              <p class="mt-1 mb-0 text-sm text-ink-muted truncate">{sub()}</p>
+            )}
           </Show>
         </div>
-        <button
-          type="button"
-          class="icon-btn"
+        <IconButton
+          class="-mt-1 -mr-1.5"
           aria-label="Fermer"
           disabled={!dismissible()}
           onClick={closeDialog}
         >
           <CloseIcon size={16} />
-        </button>
+        </IconButton>
       </header>
-      <div class="modal-body">{props.children}</div>
+      <div class="pt-4.5 px-5.5 pb-5.5 overflow-y-auto overscroll-contain">
+        {props.children}
+      </div>
     </dialog>
   );
 }

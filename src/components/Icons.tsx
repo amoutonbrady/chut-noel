@@ -1,6 +1,8 @@
+import type { JSX } from "@solidjs/web";
+
 interface IconProps {
   size?: number;
-  class?: string;
+  class?: JSX.ClassValue;
 }
 
 const base = (size = 16) => ({
@@ -69,7 +71,6 @@ export function EnvelopeSealIllustration(props: { class?: string }) {
         height="48"
         rx="6"
         fill="var(--accent-soft-bg)"
-        stroke="color-mix(in oklab, var(--accent) 28%, transparent)"
         stroke-width="1.2"
       />
       {/* Subtle diagonal lining inside */}

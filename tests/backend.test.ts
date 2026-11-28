@@ -40,7 +40,7 @@ function req(
   method: string,
   options?: { body?: unknown; token?: string; headers?: Record<string, string> },
 ): Request {
-  const headers: Record<string, string> = { ...(options?.headers ?? {}) };
+  const headers: Record<string, string> = { ...options?.headers };
   if (options?.token !== undefined) {
     headers.Authorization = `Bearer ${options.token}`;
   }
@@ -617,11 +617,11 @@ describe("Personal Wishlist Backend", () => {
         "javascript:alert(1)",
       ];
 
-      const fetchSpy = vi.fn();
+      const fetchSpy = vi.fn<typeof fetch>();
       for (const badUrl of blockedUrls) {
         expect(validatePublicScrapeUrl(badUrl).ok, `SSRF block ${badUrl}`).toBe(false);
         const result = await scrapeProductUrl(badUrl, {
-          fetchImpl: fetchSpy as unknown as typeof fetch,
+          fetchImpl: fetchSpy,
         });
         expect(result.blocked).toBe(true);
       }
@@ -641,7 +641,7 @@ describe("Personal Wishlist Backend", () => {
     });
 
     it("blocks redirects targeting internal SSRF addresses", async () => {
-      const mockFetch = vi.fn(async () => {
+      const mockFetch = vi.fn<typeof fetch>(async () => {
         return new Response(null, {
           status: 302,
           headers: { Location: "http://169.254.169.254/latest/meta-data/" },
@@ -649,7 +649,7 @@ describe("Personal Wishlist Backend", () => {
       });
 
       const result = await scrapeProductUrl("https://shop.example.com/jump", {
-        fetchImpl: mockFetch as unknown as typeof fetch,
+        fetchImpl: mockFetch,
       });
       expect(result.blocked).toBe(true);
       expect(mockFetch).toHaveBeenCalledTimes(1);
@@ -693,18 +693,19 @@ describe("Personal Wishlist Backend", () => {
         },
       });
       const hugeRes = await scrapeProductUrl("https://www.huge-site.fr/item", {
-        fetchImpl: vi.fn(
+        fetchImpl: vi.fn<typeof fetch>(
           async () =>
             new Response(stream, {
               status: 200,
               headers: { "Content-Type": "text/html; charset=utf-8" },
             }),
-        ) as unknown as typeof fetch,
+        ),
       });
       expect(hugeRes.blocked).toBe(false);
-      if (!hugeRes.blocked) {
-        expect(hugeRes.data.title).toBe("Objet Grand Format");
+      if (hugeRes.blocked) {
+        throw new Error("Expected hugeRes not to be blocked");
       }
+      expect(hugeRes.data.title).toBe("Objet Grand Format");
       // 2 MB cap = 32 chunks of 64 KB: the 3.75 MB stream must not be read to the end
       expect(chunksSent).toBeLessThan(40);
     });

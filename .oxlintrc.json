@@ -1,0 +1,46 @@
+{
+  "jsPlugins": ["@shadcn/lint"],
+  "plugins": ["typescript", "unicorn", "oxc", "import", "jsx-a11y", "vitest"],
+  "settings": {
+    "shadcn": {
+      "componentImports": ["^(\\.\\./|\\./)components/ui(/|$)", "^\\./ui(/|$)"]
+    }
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "rules": {
+    "shadcn/no-inline-styles": "error",
+    "shadcn/no-raw-colors": "error",
+    "shadcn/no-arbitrary-values": "error",
+    "shadcn/no-unknown-classes": "error",
+    "shadcn/require-static-classes": "error",
+    "shadcn/no-restyle": [
+      "error",
+      {
+        "allow": ["layout"],
+        "contracts": [
+          {
+            "pattern": "^Button$",
+            "allow": ["layout", "w-full"]
+          }
+        ]
+      }
+    ],
+    "unicorn/no-array-sort": "error",
+    "unicorn/consistent-function-scoping": "off",
+    "import/no-unassigned-import": "off",
+    "jsx-a11y/label-has-associated-control": "off",
+    "jsx-a11y/autocomplete-valid": "off",
+    "jsx-a11y/prefer-tag-over-role": "off"
+  },
+  "overrides": [
+    {
+      "files": ["src/components/ui/**"],
+      "rules": {
+        "shadcn/no-restyle": "off"
+      }
+    }
+  ]
+}

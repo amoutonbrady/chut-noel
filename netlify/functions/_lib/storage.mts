@@ -244,8 +244,10 @@ export function sanitizeText(
     options?.allowNewlines
       ? value
           .replace(/\r\n?/g, "\n")
+          // oxlint-disable-next-line no-control-regex -- intentionally stripping ASCII control characters
           .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
-      : value.replace(/[\u0000-\u001F\u007F]+/g, " ")
+      : // oxlint-disable-next-line no-control-regex -- intentionally replacing ASCII control characters
+        value.replace(/[\u0000-\u001F\u007F]+/g, " ")
   ).trim();
   if (!cleaned) {
     return undefined;

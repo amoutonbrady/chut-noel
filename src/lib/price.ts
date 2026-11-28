@@ -5,8 +5,8 @@
 export function parsePrice(hint?: string): number | null {
   if (!hint) return null;
   const compact = hint
-    // Thousands separators as spaces: "1 299", "1 299"
-    .replace(/(\d)[\s  ](?=\d{3}(?!\d))/g, "$1")
+    // Thousands separators as spaces (regular, NBSP, narrow NBSP): "1 299"
+    .replace(/(\d)[\s\u00A0\u202F](?=\d{3}(?!\d))/g, "$1")
     // Thousands separators as . or , followed by a decimal part or the end: "1.299,00", "1,299"
     .replace(/(\d)[.,](?=\d{3}(?:[.,]\d{1,2})?(?!\d))/g, "$1");
   const match = compact.match(/\d+(?:[.,]\d{1,2})?/);
