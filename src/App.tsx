@@ -1,6 +1,8 @@
 import { createSignal, Match, onSettled, Show, Switch, useContext } from "solid-js";
+import { initPwa } from "./lib/pwa";
 import { createRouter, RouterContext } from "./lib/router";
 import { ArrowLeftIcon, GiftIcon, RibbonBowIcon } from "./components/Icons";
+import { PwaInstallButton, PwaUpdateBanner } from "./components/PwaControls";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { ToastProvider } from "./components/ToastHost";
 import { ButtonLink } from "./components/ui/Button";
@@ -13,10 +15,14 @@ function AppShell() {
   const [scrolled, setScrolled] = createSignal(false);
 
   onSettled(() => {
+    const cleanupPwa = initPwa();
     const onScroll = () => setScrolled(window.scrollY > 12);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      cleanupPwa();
+      window.removeEventListener("scroll", onScroll);
+    };
   });
 
   const handleLinkClick = (to: string) => (e: MouseEvent) => {
@@ -70,6 +76,7 @@ function AppShell() {
           </a>
 
           <nav class="flex items-center gap-1 sm:gap-1.5 shrink-0" aria-label="Navigation principale">
+            <PwaInstallButton />
             <ThemeToggle />
             <Show
               when={isAdmin()}
@@ -131,6 +138,8 @@ function AppShell() {
           </Match>
         </Switch>
       </main>
+
+      <PwaUpdateBanner />
     </div>
   );
 }
